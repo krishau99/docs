@@ -2,9 +2,8 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"flag"
+	"fmt"
 	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC)
@@ -131,22 +130,9 @@ func applyCustomCA(cfg *rest.Config, caCertFile string) error {
 		return err
 	}
 
-	rootCAs, err := x509.SystemCertPool()
-	if err != nil {
-		rootCAs = x509.NewCertPool()
-	}
-	rootCAs.AppendCertsFromPEM(caPEM)
-
 	if cfg.TLSClientConfig.CAData == nil {
 		cfg.TLSClientConfig.CAData = caPEM
 	}
-
-	// Also update the TLS config used by the HTTP transport
-	cfg.WrapTransport = nil
-	tlsCfg := &tls.Config{
-		RootCAs: rootCAs,
-	}
-	_ = tlsCfg
 
 	return nil
 }
@@ -170,7 +156,7 @@ func installCRDs(cfg *rest.Config) error {
 
 	crd, ok := obj.(*apiextensionsv1.CustomResourceDefinition)
 	if !ok {
-		return nil
+		return fmt.Errorf("embedded YAML is not a CustomResourceDefinition, got %T", obj)
 	}
 
 	// Create the apiextensions client
