@@ -1,5 +1,5 @@
 # Binaries
-controller
+/controller
 *.exe
 *.exe~
 *.dll
