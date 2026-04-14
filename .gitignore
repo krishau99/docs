@@ -1,0 +1,33 @@
+# Binaries
+controller
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of 'go build' in the project root
+/bin/
+
+# Dependency vendor directory
+vendor/
+
+# Go workspace file
+go.work
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Coverage output
+coverage.out
+coverage.html
