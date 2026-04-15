@@ -1,0 +1,209 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: docspages.zensical.io
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.2
+spec:
+  group: zensical.io
+  names:
+    kind: DocsPage
+    listKind: DocsPageList
+    plural: docspages
+    singular: docspage
+    shortNames:
+      - dp
+    categories:
+      - docs
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Mode
+          type: string
+          jsonPath: .spec.mode
+        - name: Ready
+          type: boolean
+          jsonPath: .status.ready
+        - name: SHA
+          type: string
+          jsonPath: .status.currentSHA
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: |
+            DocsPage manages documentation page deployments in Kubernetes.
+            It supports two modes: "build" (clone from Gitea, build with Zensical,
+            serve with Apache) and "prebuilt" (deploy a pre-existing image).
+          properties:
+            apiVersion:
+              type: string
+              description: APIVersion defines the versioned schema of this representation of an object.
+            kind:
+              type: string
+              description: Kind is a string value representing the REST resource this object represents.
+            metadata:
+              type: object
+            spec:
+              type: object
+              description: DocsPageSpec defines the desired state of DocsPage.
+              required:
+                - mode
+              properties:
+                mode:
+                  type: string
+                  description: |
+                    Mode defines how this documentation page is deployed.
+                    "build" clones a git repo and builds with Zensical.
+                    "prebuilt" deploys a pre-existing documentation image.
+                  enum:
+                    - build
+                    - prebuilt
+                image:
+                  type: string
+                  description: |
+                    Image is the pre-built documentation image to deploy.
+                    Only used when mode is "prebuilt".
+                repo:
+                  type: object
+                  description: |
+                    Repo defines the git repository configuration.
+                    Only used when mode is "build".
+                  required:
+                    - url
+                  properties:
+                    url:
+                      type: string
+                      description: URL is the URL of the git repository to clone.
+                    branch:
+                      type: string
+                      description: Branch is the branch to clone and monitor for changes.
+                      default: main
+                    credentialsSecret:
+                      type: string
+                      description: |
+                        CredentialsSecret is the name of a Kubernetes Secret containing git credentials.
+                        The secret should contain keys: username and password (or token).
+                pollInterval:
+                  type: string
+                  description: |
+                    PollInterval is how often the controller checks Gitea for new commits.
+                    Only used when mode is "build".
+                    Format: duration string, e.g. "5m", "1h".
+                  default: "5m"
+                variables:
+                  type: object
+                  description: |
+                    Variables are key-value pairs substituted into documentation files and zensical.toml.
+                    Variables are available as ${KEY} in files processed by envsubst.
+                    Only used when mode is "build".
+                  additionalProperties:
+                    type: string
+                extraSubstitutions:
+                  type: object
+                  description: |
+                    ExtraSubstitutions are additional key-value pairs for variable substitution,
+                    supplementing the Variables field with custom values.
+                    Only used when mode is "build".
+                  additionalProperties:
+                    type: string
+                registry:
+                  type: object
+                  description: Registry defines the container registry configuration.
+                  properties:
+                    url:
+                      type: string
+                      description: |
+                        URL is the registry URL prefix to prepend to all image references.
+                        Example: "registry.internal"
+                tls:
+                  type: object
+                  description: TLS defines the TLS/CA certificate configuration.
+                  properties:
+                    caSecret:
+                      type: string
+                      description: |
+                        CASecret is the name of a Kubernetes Secret containing a custom CA certificate.
+                        The secret should contain a key "ca.crt" with the PEM-encoded CA certificate.
+                        This certificate is used for TLS verification when connecting to the registry,
+                        Gitea, and other services.
+                serving:
+                  type: object
+                  description: Serving defines the serving configuration.
+                  properties:
+                    replicas:
+                      type: integer
+                      format: int32
+                      description: Replicas is the number of replicas for the serving Deployment.
+                      default: 1
+                      minimum: 0
+                    port:
+                      type: integer
+                      format: int32
+                      description: Port is the port on which the documentation is served.
+                      default: 8080
+                      minimum: 1
+                      maximum: 65535
+            status:
+              type: object
+              description: DocsPageStatus defines the observed state of DocsPage.
+              properties:
+                currentSHA:
+                  type: string
+                  description: |
+                    CurrentSHA is the git commit SHA of the currently deployed documentation.
+                    Only set when mode is "build".
+                lastSyncTime:
+                  type: string
+                  format: date-time
+                  description: LastSyncTime is the time of the last successful synchronization.
+                ready:
+                  type: boolean
+                  description: Ready indicates whether the documentation is ready to serve traffic.
+                conditions:
+                  type: array
+                  description: Conditions represent the latest available observations of the DocsPage state.
+                  items:
+                    type: object
+                    required:
+                      - lastTransitionTime
+                      - message
+                      - reason
+                      - status
+                      - type
+                    properties:
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                      message:
+                        type: string
+                        maxLength: 32768
+                      observedGeneration:
+                        type: integer
+                        format: int64
+                        minimum: 0
+                      reason:
+                        type: string
+                        maxLength: 1024
+                        minLength: 1
+                        pattern: '^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$'
+                      status:
+                        type: string
+                        enum:
+                          - "True"
+                          - "False"
+                          - Unknown
+                      type:
+                        type: string
+                        maxLength: 316
+                        pattern: '^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$'
+                  x-kubernetes-list-map-keys:
+                    - type
+                  x-kubernetes-list-type: map

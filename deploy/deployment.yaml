@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docspage-controller
+  namespace: docs
+  labels:
+    app.kubernetes.io/name: docspage-controller
+    app.kubernetes.io/managed-by: docspage-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: docspage-controller
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: docspage-controller
+    spec:
+      serviceAccountName: docspage-controller
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+      containers:
+        - name: controller
+          # Update this image reference to match your registry
+          image: ghcr.io/krishau99/docs-controller:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - --leader-elect
+            - --metrics-bind-address=:8080
+            - --health-probe-bind-address=:8081
+            # Uncomment to use a custom CA certificate for Gitea/registry communication:
+            # - --ca-cert-file=/etc/ssl/certs/custom-ca.crt
+          ports:
+            - name: metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          # Uncomment the following to mount a custom CA certificate:
+          # env:
+          #   - name: CA_CERT_FILE
+          #     value: /etc/ssl/certs/custom-ca.crt
+          # volumeMounts:
+          #   - name: ca-cert
+          #     mountPath: /etc/ssl/certs/custom-ca.crt
+          #     subPath: ca.crt
+          #     readOnly: true
+      # volumes:
+      #   - name: ca-cert
+      #     secret:
+      #       secretName: custom-ca-cert
+      terminationGracePeriodSeconds: 10

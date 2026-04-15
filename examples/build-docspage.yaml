@@ -1,0 +1,66 @@
+# Example DocsPage with mode: build
+# This deploys a documentation site by cloning from Gitea, substituting variables,
+# building with Zensical, and serving with Apache.
+apiVersion: zensical.io/v1alpha1
+kind: DocsPage
+metadata:
+  name: docs-page-a
+  namespace: docs
+spec:
+  mode: build
+
+  # Git repository to clone
+  repo:
+    url: https://gitea.internal/org/docs-a
+    branch: main
+    # Reference to a Secret with keys: username, password
+    credentialsSecret: gitea-deploy-key
+
+  # How often to check for new commits (e.g., 5m, 10m, 1h)
+  pollInterval: 5m
+
+  # Variables substituted via envsubst in all .md, .toml, .html files
+  variables:
+    DOMAIN: docs-a.internal.example.com
+    BASE_URL: https://docs-a.internal.example.com
+
+  # Additional substitution variables
+  extraSubstitutions:
+    CUSTOM_VAR_1: value1
+    CUSTOM_VAR_2: value2
+
+  # Registry URL prefix for all images used by this DocsPage
+  registry:
+    url: registry.internal
+
+  # Custom CA certificate for TLS verification
+  tls:
+    caSecret: custom-ca-cert
+
+  # Serving configuration
+  serving:
+    replicas: 1
+    port: 8080
+
+---
+# Git credentials secret (create this separately with your actual credentials)
+# apiVersion: v1
+# kind: Secret
+# metadata:
+#   name: gitea-deploy-key
+#   namespace: docs
+# type: Opaque
+# stringData:
+#   username: deploy-user
+#   password: your-access-token
+
+---
+# Custom CA certificate secret (create this with your actual CA certificate)
+# apiVersion: v1
+# kind: Secret
+# metadata:
+#   name: custom-ca-cert
+#   namespace: docs
+# type: Opaque
+# data:
+#   ca.crt: <base64-encoded-PEM-CA-certificate>
