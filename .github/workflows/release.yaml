@@ -42,12 +42,21 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
+      - name: Validate release assets
+        run: |
+          for f in deploy/namespace.yaml deploy/rbac.yaml deploy/deployment.yaml crd/docspage-crd.yaml; do
+            [ -f "$f" ] || { echo "Missing required file: $f"; exit 1; }
+          done
+
       - name: Prepare release assets
         run: |
           # Pin the image tag in a versioned copy of the deployment manifest
           VERSION="${{ github.ref_name }}"
           sed "s|ghcr.io/krishau99/docs-controller:latest|ghcr.io/krishau99/docs-controller:${VERSION}|g" \
             deploy/deployment.yaml > /tmp/deployment-${VERSION}.yaml
+          # Verify the substitution actually replaced something
+          grep -q "ghcr.io/krishau99/docs-controller:${VERSION}" /tmp/deployment-${VERSION}.yaml || \
+            { echo "Image tag substitution failed — check deployment.yaml image reference"; exit 1; }
 
       - name: Create GitHub Release
         env:
