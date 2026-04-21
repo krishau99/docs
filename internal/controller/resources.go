@@ -399,8 +399,8 @@ find . -type f \( -name "*.md" -o -name "*.toml" -o -name "*.html" \) | while re
   envsubst < "$file" > "$file.tmp" && mv "$file.tmp" "$file"
 done
 
-# Build with Zensical, output to /output
-zensical build --output ` + mountOutput
+# Build with Zensical (site_dir is configured in zensical.toml)
+zensical build`
 }
 
 // buildEnvSubstVars converts the DocsPage variables and extraSubstitutions into
