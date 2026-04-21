@@ -40,12 +40,16 @@ func prefixImage(registryURL, image string) string {
 	if registryURL == "" {
 		return image
 	}
-	// If the image already starts with the registry or contains a likely registry host
-	// (first component contains a '.' or ':'), don't prepend.
+	// Only treat the first component as a registry hostname when the image
+	// contains a '/' (i.e., has a path component). Bare image names like
+	// "httpd:2.4-alpine" have no '/', so their ':' is a tag separator, not
+	// a registry port, and the registry URL must still be prepended.
 	parts := strings.SplitN(image, "/", 2)
-	firstComponent := parts[0]
-	if strings.Contains(firstComponent, ".") || strings.Contains(firstComponent, ":") {
-		return image
+	if len(parts) > 1 {
+		firstComponent := parts[0]
+		if strings.Contains(firstComponent, ".") || strings.Contains(firstComponent, ":") {
+			return image
+		}
 	}
 	return registryURL + "/" + image
 }
