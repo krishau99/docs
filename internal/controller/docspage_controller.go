@@ -28,6 +28,9 @@ const (
 type DocsPageReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	// DefaultCACert is an optional cluster-wide CA certificate (PEM) used for
+	// external HTTP calls (Gitea, registries) when no per-resource CA secret is configured.
+	DefaultCACert []byte
 }
 
 // +kubebuilder:rbac:groups=zensical.io,resources=docspages,verbs=get;list;watch;create;update;patch;delete
@@ -253,7 +256,7 @@ func (r *DocsPageReconciler) fetchLatestSHA(ctx context.Context, dp *v1alpha1.Do
 		return "", fmt.Errorf("spec.repo is not set")
 	}
 
-	// Load optional CA certificate
+	// Load optional CA certificate; fall back to the cluster-wide default.
 	var caPEM []byte
 	if dp.Spec.TLS != nil && dp.Spec.TLS.CASecret != "" {
 		caSecret := &corev1.Secret{}
@@ -261,6 +264,8 @@ func (r *DocsPageReconciler) fetchLatestSHA(ctx context.Context, dp *v1alpha1.Do
 			return "", fmt.Errorf("fetching CA secret %q: %w", dp.Spec.TLS.CASecret, err)
 		}
 		caPEM = caSecret.Data["ca.crt"]
+	} else if len(r.DefaultCACert) > 0 {
+		caPEM = r.DefaultCACert
 	}
 
 	// Load optional git credentials

@@ -63,11 +63,21 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	// Configure REST config with optional custom CA certificate
 	restConfig := ctrl.GetConfigOrDie()
-	if err := applyCustomCA(restConfig, caCertFile); err != nil {
-		setupLog.Error(err, "failed to configure custom CA certificate")
-		os.Exit(1)
+
+	// Load the optional custom CA certificate for external HTTP calls (Gitea, registries).
+	// It is intentionally NOT applied to restConfig so the cluster's own CA is preserved.
+	var customCAPEM []byte
+	if caCertFile == "" {
+		caCertFile = os.Getenv("CA_CERT_FILE")
+	}
+	if caCertFile != "" {
+		pem, err := os.ReadFile(caCertFile)
+		if err != nil {
+			setupLog.Error(err, "failed to read custom CA certificate file")
+			os.Exit(1)
+		}
+		customCAPEM = pem
 	}
 
 	// Install CRDs before starting the manager
@@ -91,8 +101,9 @@ func main() {
 	}
 
 	if err = (&controller.DocsPageReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		DefaultCACert: customCAPEM,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DocsPage")
 		os.Exit(1)
@@ -112,29 +123,6 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
-}
-
-// applyCustomCA loads a custom CA certificate from the given file path and applies it
-// to the Kubernetes REST config.
-func applyCustomCA(cfg *rest.Config, caCertFile string) error {
-	if caCertFile == "" {
-		// Also check the well-known env var
-		caCertFile = os.Getenv("CA_CERT_FILE")
-	}
-	if caCertFile == "" {
-		return nil
-	}
-
-	caPEM, err := os.ReadFile(caCertFile)
-	if err != nil {
-		return err
-	}
-
-	if cfg.TLSClientConfig.CAData == nil {
-		cfg.TLSClientConfig.CAData = caPEM
-	}
-
-	return nil
 }
 
 // installCRDs ensures the DocsPage CRD is installed in the cluster.
