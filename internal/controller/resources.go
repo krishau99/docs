@@ -390,6 +390,8 @@ git clone --depth 1 --branch %s "$AUTHENTICATED_URL" %s`,
 
 // buildZensicalBuildCommand generates the shell command used in the Zensical build init container.
 // It runs envsubst on all .md and .toml files in the workspace, then builds with Zensical.
+// Zensical outputs to ./site (i.e. /workspace/site) by default; the built files are then
+// moved to the output volume (/output) so Apache can serve them.
 func buildZensicalBuildCommand() string {
 	return `set -e
 cd ` + mountWorkspace + `
@@ -399,8 +401,13 @@ find . -type f \( -name "*.md" -o -name "*.toml" -o -name "*.html" \) | while re
   envsubst < "$file" > "$file.tmp" && mv "$file.tmp" "$file"
 done
 
-# Build with Zensical (site_dir is configured in zensical.toml)
-zensical build`
+# Build with Zensical (default output directory is ./site)
+zensical build
+
+# Move the built files (including hidden files) from the default ./site output directory to the output volume
+if [ -d ` + mountWorkspace + `/site ]; then
+  find ` + mountWorkspace + `/site/. -maxdepth 1 ! -name '.' -exec mv -t ` + mountOutput + `/ {} +
+fi`
 }
 
 // buildEnvSubstVars converts the DocsPage variables and extraSubstitutions into

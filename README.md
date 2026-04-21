@@ -99,7 +99,8 @@ The generated Deployment has three containers:
 2. **Init container `zensical-build`** (`zensical/builder:latest` or prefixed):
    - Runs `envsubst` on all `.md`, `.toml`, and `.html` files in `/workspace`
    - All `variables` and `extraSubstitutions` are available as environment variables
-   - Runs `zensical build` (output directory is configured via `site_dir` in `zensical.toml`)
+   - Runs `zensical build` (default output directory is `./site`, i.e. `/workspace/site`)
+   - Moves the built files from `/workspace/site` to `/output`
 
 3. **Main container `apache`** (`httpd:2.4-alpine` or prefixed):
    - Serves the built documentation from `/output` via Apache
