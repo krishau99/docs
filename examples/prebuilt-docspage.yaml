@@ -1,6 +1,6 @@
 # Example DocsPage with mode: prebuilt
 # This deploys a pre-existing documentation image without any build steps.
-apiVersion: zensical.io/v1alpha1
+apiVersion: docspage/v1alpha1
 kind: DocsPage
 metadata:
   name: legacy-docs

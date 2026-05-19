@@ -1,7 +1,7 @@
 # Example DocsPage with mode: build
 # This deploys a documentation site by cloning from Gitea, substituting variables,
 # building with Zensical, and serving with Apache.
-apiVersion: zensical.io/v1alpha1
+apiVersion: docspage/v1alpha1
 kind: DocsPage
 metadata:
   name: docs-page-a
@@ -41,6 +41,12 @@ spec:
   serving:
     replicas: 1
     port: 8080
+
+  # Optional: override the default images used in build mode
+  # images:
+  #   git: alpine/git:latest
+  #   zensical: zensical/zensical:latest
+  #   apache: httpd:2.4-alpine
 
 ---
 # Git credentials secret (create this separately with your actual credentials)
