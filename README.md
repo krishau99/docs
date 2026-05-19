@@ -46,7 +46,7 @@ The DocsPage controller watches `DocsPage` resources across all namespaces and m
 Clones a git repository, substitutes variables, builds with Zensical, and serves the output with Apache.
 
 ```yaml
-apiVersion: zensical.io/v1alpha1
+apiVersion: docspage/v1alpha1
 kind: DocsPage
 metadata:
   name: docs-page-a
@@ -85,6 +85,12 @@ spec:
   serving:
     replicas: 1
     port: 8080
+
+  # Optional: override default container images used in build mode
+  # images:
+  #   git: alpine/git:latest
+  #   zensical: zensical/zensical:latest
+  #   apache: httpd:2.4-alpine
 ```
 
 **How build mode works:**
@@ -96,7 +102,7 @@ The generated Deployment has three containers:
    - Uses `GIT_USERNAME` / `GIT_PASSWORD` env vars from `credentialsSecret`
    - Sets `GIT_SSL_CAINFO` to the mounted CA certificate
 
-2. **Init container `zensical-build`** (`zensical/builder:latest` or prefixed):
+2. **Init container `zensical-build`** (`zensical/zensical:latest` or prefixed):
    - Runs `envsubst` on all `.md`, `.toml`, and `.html` files in `/workspace`
    - All `variables` and `extraSubstitutions` are available as environment variables
    - Runs `zensical build` (default output directory is `./site`, i.e. `/workspace/site`)
@@ -110,7 +116,7 @@ The generated Deployment has three containers:
 Deploys a pre-existing documentation image directly without any build steps.
 
 ```yaml
-apiVersion: zensical.io/v1alpha1
+apiVersion: docspage/v1alpha1
 kind: DocsPage
 metadata:
   name: legacy-docs
@@ -268,7 +274,7 @@ The controller polls for new commits on a configurable interval (`spec.pollInter
 
 1. The controller calls the git smart HTTP protocol endpoint (`/info/refs?service=git-upload-pack`) to get the latest commit SHA without doing a full clone.
 2. If that fails, it falls back to the Gitea REST API (`/api/v1/repos/{owner}/{repo}/branches/{branch}`).
-3. If the latest SHA differs from `status.currentSHA`, the controller updates the pod template annotation `zensical.io/restartedAt` and `zensical.io/currentSHA`, triggering a rolling restart.
+3. If the latest SHA differs from `status.currentSHA`, the controller updates the pod template annotation `docspage/restartedAt` and `docspage/currentSHA`, triggering a rolling restart.
 4. The new SHA is stored in `status.currentSHA`.
 
 **Credentials:** The same `spec.repo.credentialsSecret` used for cloning is also used for the polling HTTP requests (HTTP Basic Auth).
@@ -285,7 +291,7 @@ var docsPageCRDYAML []byte
 ```
 
 On startup, `main.go` calls `installCRDs()` which:
-1. Checks if the `docspages.zensical.io` CRD already exists.
+1. Checks if the `docspages.docspage` CRD already exists.
 2. If not, creates it.
 3. If it exists, updates it to ensure it matches the embedded definition.
 
@@ -313,7 +319,7 @@ spec:
         name: deliverybot
   values:
     resources:
-      - apiVersion: zensical.io/v1alpha1
+      - apiVersion: docspage/v1alpha1
         kind: DocsPage
         metadata:
           name: docs-page-a
@@ -347,7 +353,7 @@ The controller requires these permissions (see `deploy/rbac.yaml`):
 
 | Resource | Verbs |
 |---|---|
-| `docspages` (zensical.io) | get, list, watch, create, update, patch, delete |
+| `docspages` (docspage) | get, list, watch, create, update, patch, delete |
 | `docspages/status` | get, update, patch |
 | `docspages/finalizers` | update |
 | `deployments` (apps) | get, list, watch, create, update, patch, delete |
