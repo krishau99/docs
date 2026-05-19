@@ -65,6 +65,24 @@ type ServingSpec struct {
 	Port int32 `json:"port,omitempty"`
 }
 
+// ImagesSpec defines optional image overrides for the build mode containers.
+type ImagesSpec struct {
+	// Git is the image used for the git-clone init container.
+	// Defaults to "alpine/git:latest".
+	// +optional
+	Git string `json:"git,omitempty"`
+
+	// Zensical is the image used for the zensical-build init container.
+	// Defaults to "zensical/zensical:latest".
+	// +optional
+	Zensical string `json:"zensical,omitempty"`
+
+	// Apache is the image used for the Apache serving container.
+	// Defaults to "httpd:2.4-alpine".
+	// +optional
+	Apache string `json:"apache,omitempty"`
+}
+
 // DocsPageSpec defines the desired state of DocsPage.
 type DocsPageSpec struct {
 	// Mode defines how this documentation page is deployed.
@@ -114,6 +132,11 @@ type DocsPageSpec struct {
 	// Serving defines the serving configuration.
 	// +optional
 	Serving ServingSpec `json:"serving,omitempty"`
+
+	// Images allows overriding the default container images used in build mode.
+	// This appends to the existing setup and allows overriding the git, zensical, and apache images.
+	// +optional
+	Images *ImagesSpec `json:"images,omitempty"`
 }
 
 // DocsPageStatus defines the observed state of DocsPage.

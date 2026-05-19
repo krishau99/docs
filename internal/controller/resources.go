@@ -25,13 +25,13 @@ const (
 
 	// Default images (can be overridden by prepending registry.url)
 	defaultGitImage      = "alpine/git:latest"
-	defaultBuildImage    = "zensical/builder:latest"
+	defaultBuildImage    = "zensical/zensical:latest"
 	defaultServingImage  = "httpd:2.4-alpine"
 
 	// Annotation used to trigger rolling restarts
-	annotationRestartedAt = "zensical.io/restartedAt"
+	annotationRestartedAt = "docspage/restartedAt"
 	// Annotation for tracking current SHA on Deployment
-	annotationCurrentSHA = "zensical.io/currentSHA"
+	annotationCurrentSHA = "docspage/currentSHA"
 )
 
 // prefixImage prepends the registry URL to an image name if the image doesn't
@@ -117,9 +117,25 @@ func buildDeployment(dp *v1alpha1.DocsPage, registryURL, currentSHA string) *app
 //   - output (emptyDir): built documentation, shared with Apache
 //   - ca-cert (secret volume): optional custom CA certificate
 func buildPodSpecForBuildMode(dp *v1alpha1.DocsPage, registryURL string, port int32) corev1.PodSpec {
-	gitImage := prefixImage(registryURL, defaultGitImage)
-	buildImage := prefixImage(registryURL, defaultBuildImage)
-	serveImage := prefixImage(registryURL, defaultServingImage)
+	gitImageRef := defaultGitImage
+	buildImageRef := defaultBuildImage
+	serveImageRef := defaultServingImage
+
+	if dp.Spec.Images != nil {
+		if dp.Spec.Images.Git != "" {
+			gitImageRef = dp.Spec.Images.Git
+		}
+		if dp.Spec.Images.Zensical != "" {
+			buildImageRef = dp.Spec.Images.Zensical
+		}
+		if dp.Spec.Images.Apache != "" {
+			serveImageRef = dp.Spec.Images.Apache
+		}
+	}
+
+	gitImage := prefixImage(registryURL, gitImageRef)
+	buildImage := prefixImage(registryURL, buildImageRef)
+	serveImage := prefixImage(registryURL, serveImageRef)
 
 	volumes := []corev1.Volume{
 		{

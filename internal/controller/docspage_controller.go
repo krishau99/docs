@@ -21,7 +21,7 @@ import (
 
 const (
 	conditionTypeReady = "Ready"
-	finalizerName      = "zensical.io/finalizer"
+	finalizerName      = "docspage/finalizer"
 )
 
 // DocsPageReconciler reconciles a DocsPage object.
@@ -33,9 +33,9 @@ type DocsPageReconciler struct {
 	DefaultCACert []byte
 }
 
-// +kubebuilder:rbac:groups=zensical.io,resources=docspages,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=zensical.io,resources=docspages/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=zensical.io,resources=docspages/finalizers,verbs=update
+// +kubebuilder:rbac:groups=docspage,resources=docspages,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=docspage,resources=docspages/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=docspage,resources=docspages/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch
