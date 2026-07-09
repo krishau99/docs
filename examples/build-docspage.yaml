@@ -1,7 +1,7 @@
 # Example DocsPage with mode: build
 # This deploys a documentation site by cloning from Gitea, substituting variables,
 # building with Zensical, and serving with Apache.
-apiVersion: docspage/v1alpha1
+apiVersion: docspage.io/v1alpha1
 kind: DocsPage
 metadata:
   name: docs-page-a

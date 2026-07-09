@@ -18,13 +18,13 @@ metadata:
     app.kubernetes.io/managed-by: docspage-controller
 rules:
   # DocsPage resources
-  - apiGroups: ["zensical.io"]
+  - apiGroups: ["docspage.io"]
     resources: ["docspages"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: ["zensical.io"]
+  - apiGroups: ["docspage.io"]
     resources: ["docspages/status"]
     verbs: ["get", "update", "patch"]
-  - apiGroups: ["zensical.io"]
+  - apiGroups: ["docspage.io"]
     resources: ["docspages/finalizers"]
     verbs: ["update"]
 
@@ -52,6 +52,11 @@ rules:
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]
+
+  # Leases (for leader election, --leader-elect)
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1

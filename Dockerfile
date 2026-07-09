@@ -12,8 +12,10 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the controller binary
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+# Build the controller binary for the target platform (set automatically by buildkit)
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
     -ldflags="-s -w" \
     -o controller \
     .

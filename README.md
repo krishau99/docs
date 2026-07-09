@@ -46,7 +46,7 @@ The DocsPage controller watches `DocsPage` resources across all namespaces and m
 Clones a git repository, substitutes variables, builds with Zensical, and serves the output with Apache.
 
 ```yaml
-apiVersion: docspage/v1alpha1
+apiVersion: docspage.io/v1alpha1
 kind: DocsPage
 metadata:
   name: docs-page-a
@@ -116,7 +116,7 @@ The generated Deployment has three containers:
 Deploys a pre-existing documentation image directly without any build steps.
 
 ```yaml
-apiVersion: docspage/v1alpha1
+apiVersion: docspage.io/v1alpha1
 kind: DocsPage
 metadata:
   name: legacy-docs
@@ -291,7 +291,7 @@ var docsPageCRDYAML []byte
 ```
 
 On startup, `main.go` calls `installCRDs()` which:
-1. Checks if the `docspages.docspage` CRD already exists.
+1. Checks if the `docspages.docspage.io` CRD already exists.
 2. If not, creates it.
 3. If it exists, updates it to ensure it matches the embedded definition.
 
@@ -319,7 +319,7 @@ spec:
         name: deliverybot
   values:
     resources:
-      - apiVersion: docspage/v1alpha1
+      - apiVersion: docspage.io/v1alpha1
         kind: DocsPage
         metadata:
           name: docs-page-a

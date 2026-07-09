@@ -9,7 +9,7 @@ import (
 
 var (
 	// GroupVersion is group version used to register these objects.
-	GroupVersion = schema.GroupVersion{Group: "docspage", Version: "v1alpha1"}
+	GroupVersion = schema.GroupVersion{Group: "docspage.io", Version: "v1alpha1"}
 
 	// SchemeBuilder is used to add functions to this group's scheme.
 	SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}

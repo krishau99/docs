@@ -1,11 +1,11 @@
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: docspages.zensical.io
+  name: docspages.docspage.io
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.2
 spec:
-  group: zensical.io
+  group: docspage.io
   names:
     kind: DocsPage
     listKind: DocsPageList
@@ -151,6 +151,27 @@ spec:
                       default: 8080
                       minimum: 1
                       maximum: 65535
+                images:
+                  type: object
+                  description: |
+                    Images allows overriding the default container images used in build mode.
+                    This appends to the existing setup and allows overriding the git, zensical, and apache images.
+                  properties:
+                    git:
+                      type: string
+                      description: |
+                        Git is the image used for the git-clone init container.
+                        Defaults to "alpine/git:latest".
+                    zensical:
+                      type: string
+                      description: |
+                        Zensical is the image used for the zensical-build init container.
+                        Defaults to "zensical/zensical:latest".
+                    apache:
+                      type: string
+                      description: |
+                        Apache is the image used for the Apache serving container.
+                        Defaults to "httpd:2.4-alpine".
             status:
               type: object
               description: DocsPageStatus defines the observed state of DocsPage.
