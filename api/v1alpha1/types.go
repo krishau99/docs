@@ -102,7 +102,7 @@ type DocsPageSpec struct {
 	// +optional
 	Repo *RepoSpec `json:"repo,omitempty"`
 
-	// PollInterval is how often the controller checks Gitea for new commits.
+	// PollInterval is how often the operator checks Gitea for new commits.
 	// Only used when mode is "build".
 	// Format: duration string, e.g. "5m", "1h"
 	// +kubebuilder:default="5m"

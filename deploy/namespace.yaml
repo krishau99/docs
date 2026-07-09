@@ -3,4 +3,4 @@ kind: Namespace
 metadata:
   name: docs
   labels:
-    app.kubernetes.io/managed-by: docspage-controller
+    app.kubernetes.io/managed-by: docspage-operator

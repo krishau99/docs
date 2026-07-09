@@ -50,8 +50,8 @@ func main() {
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.")
+		"Enable leader election for the operator manager. "+
+			"Enabling this will ensure there is only one active operator instance.")
 	flag.StringVar(&caCertFile, "ca-cert-file", "",
 		"Path to a custom CA certificate file (PEM) for TLS verification when talking to Gitea or registries.")
 
@@ -93,7 +93,7 @@ func main() {
 		},
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "docspage-controller.zensical.io",
+		LeaderElectionID:       "docspage-operator.docspage.io",
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")

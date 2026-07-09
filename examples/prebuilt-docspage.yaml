@@ -10,7 +10,7 @@ spec:
 
   # The pre-built documentation image to deploy
   # If the image doesn't already contain a registry host (e.g., "registry.internal/"),
-  # the controller will prepend spec.registry.url automatically.
+  # the operator will prepend spec.registry.url automatically.
   image: registry.internal/docs-legacy:latest
 
   # Optional: if set and image doesn't already start with a registry host,

@@ -59,7 +59,7 @@ func labelsForDocsPage(name string) map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/name":       "docspage",
 		"app.kubernetes.io/instance":   name,
-		"app.kubernetes.io/managed-by": "docspage-controller",
+		"app.kubernetes.io/managed-by": "docspage-operator",
 	}
 }
 

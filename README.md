@@ -1,22 +1,22 @@
-# DocsPage Controller
+# DocsPage Operator
 
-A Kubernetes controller for managing documentation page deployments using the `DocsPage` custom resource. The controller supports two modes:
+A Kubernetes operator for managing documentation page deployments using the `DocsPage` custom resource. The operator supports two modes:
 
 - **`build`**: Clone a git repository, substitute variables, build with Zensical, and serve with Apache.
 - **`prebuilt`**: Deploy a pre-existing documentation image directly.
 
-The controller is designed for **airgapped environments** with private container registries and custom CA certificates. It **self-installs its CRD on startup** — no separate Helm CRD install step needed.
+The operator is designed for **airgapped environments** with private container registries and custom CA certificates. It **self-installs its CRD on startup** — no separate Helm CRD install step needed.
 
 ---
 
 ## Table of Contents
 
-- [What the Controller Does](#what-the-controller-does)
+- [What the Operator Does](#what-the-operator-does)
 - [CRD Reference](#crd-reference)
   - [Mode: build](#mode-build)
   - [Mode: prebuilt](#mode-prebuilt)
   - [Status Fields](#status-fields)
-- [Deploying the Controller](#deploying-the-controller)
+- [Deploying the Operator](#deploying-the-operator)
   - [Airgapped Environments](#airgapped-environments)
 - [TLS / CA Certificates](#tls--ca-certificates)
 - [Variable Substitution](#variable-substitution)
@@ -27,9 +27,9 @@ The controller is designed for **airgapped environments** with private container
 
 ---
 
-## What the Controller Does
+## What the Operator Does
 
-The DocsPage controller watches `DocsPage` resources across all namespaces and manages the lifecycle of documentation deployments:
+The DocsPage operator watches `DocsPage` resources across all namespaces and manages the lifecycle of documentation deployments:
 
 1. **Creates/updates a `Deployment`** with the appropriate containers for the configured mode.
 2. **Creates/updates a `Service`** (ClusterIP) to expose the deployment.
@@ -157,7 +157,7 @@ status:
 
 ---
 
-## Deploying the Controller
+## Deploying the Operator
 
 ### 1. Apply the deployment manifests
 
@@ -167,7 +167,7 @@ kubectl apply -f deploy/rbac.yaml
 kubectl apply -f deploy/deployment.yaml
 ```
 
-The controller will automatically install the `DocsPage` CRD on startup.
+The operator will automatically install the `DocsPage` CRD on startup.
 
 ### 2. Create a DocsPage resource
 
@@ -188,33 +188,33 @@ kubectl describe docspage docs-page-a -n docs
 
 In airgapped environments:
 
-1. **Mirror the controller image** to your private registry:
+1. **Mirror the operator image** to your private registry:
    ```bash
-   docker pull ghcr.io/krishau99/docs-controller:latest
-   docker tag ghcr.io/krishau99/docs-controller:latest registry.internal/docs-controller:latest
-   docker push registry.internal/docs-controller:latest
+   docker pull ghcr.io/krishau99/docs-operator:latest
+   docker tag ghcr.io/krishau99/docs-operator:latest registry.internal/docs-operator:latest
+   docker push registry.internal/docs-operator:latest
    ```
 
 2. **Mirror dependent images** (`alpine/git`, `zensical/builder`, `httpd:2.4-alpine`) to your registry.
 
 3. **Update `deploy/deployment.yaml`** to reference your registry.
 
-4. **Set `spec.registry.url`** in your `DocsPage` resources so the controller prefixes all image references.
+4. **Set `spec.registry.url`** in your `DocsPage` resources so the operator prefixes all image references.
 
-5. **Mount your CA certificate** into the controller pod and pass `--ca-cert-file /path/to/ca.crt` (or set `CA_CERT_FILE` env var).
+5. **Mount your CA certificate** into the operator pod and pass `--ca-cert-file /path/to/ca.crt` (or set `CA_CERT_FILE` env var).
 
 ---
 
 ## TLS / CA Certificates
 
-### Controller-level CA certificate
+### Operator-level CA certificate
 
-For the controller itself (e.g., to talk to Gitea for git polling), provide a CA cert via:
+For the operator itself (e.g., to talk to Gitea for git polling), provide a CA cert via:
 
 - `--ca-cert-file /etc/ssl/certs/custom-ca.crt` flag, or
 - `CA_CERT_FILE=/etc/ssl/certs/custom-ca.crt` environment variable
 
-Mount the certificate from a Secret in the controller's Deployment (see `deploy/deployment.yaml` for an example with the `caSecret` commented section).
+Mount the certificate from a Secret in the operator's Deployment (see `deploy/deployment.yaml` for an example with the `caSecret` commented section).
 
 ### Per-DocsPage CA certificate
 
@@ -268,13 +268,13 @@ Variable substitution uses standard `envsubst` syntax: `${VARIABLE_NAME}`.
 
 ## Git Polling
 
-The controller polls for new commits on a configurable interval (`spec.pollInterval`, default `5m`).
+The operator polls for new commits on a configurable interval (`spec.pollInterval`, default `5m`).
 
 **How it works:**
 
-1. The controller calls the git smart HTTP protocol endpoint (`/info/refs?service=git-upload-pack`) to get the latest commit SHA without doing a full clone.
+1. The operator calls the git smart HTTP protocol endpoint (`/info/refs?service=git-upload-pack`) to get the latest commit SHA without doing a full clone.
 2. If that fails, it falls back to the Gitea REST API (`/api/v1/repos/{owner}/{repo}/branches/{branch}`).
-3. If the latest SHA differs from `status.currentSHA`, the controller updates the pod template annotation `docspage/restartedAt` and `docspage/currentSHA`, triggering a rolling restart.
+3. If the latest SHA differs from `status.currentSHA`, the operator updates the pod template annotation `docspage/restartedAt` and `docspage/currentSHA`, triggering a rolling restart.
 4. The new SHA is stored in `status.currentSHA`.
 
 **Credentials:** The same `spec.repo.credentialsSecret` used for cloning is also used for the polling HTTP requests (HTTP Basic Auth).
@@ -283,7 +283,7 @@ The controller polls for new commits on a configurable interval (`spec.pollInter
 
 ## CRD Self-Installation
 
-The controller embeds the CRD YAML directly into its binary using Go's `embed` package:
+The operator embeds the CRD YAML directly into its binary using Go's `embed` package:
 
 ```go
 //go:embed docspage-crd.yaml
@@ -295,7 +295,7 @@ On startup, `main.go` calls `installCRDs()` which:
 2. If not, creates it.
 3. If it exists, updates it to ensure it matches the embedded definition.
 
-This means you don't need a separate CRD installation step — just deploy the controller and it handles everything.
+This means you don't need a separate CRD installation step — just deploy the operator and it handles everything.
 
 ---
 
@@ -343,17 +343,17 @@ spec:
             port: 8080
 ```
 
-Each documentation site becomes a simple `HelmRelease` with its own values — Flux manages the lifecycle, and the DocsPage controller handles the actual deployment.
+Each documentation site becomes a simple `HelmRelease` with its own values — Flux manages the lifecycle, and the DocsPage operator handles the actual deployment.
 
 ---
 
 ## RBAC
 
-The controller requires these permissions (see `deploy/rbac.yaml`):
+The operator requires these permissions (see `deploy/rbac.yaml`):
 
 | Resource | Verbs |
 |---|---|
-| `docspages` (docspage) | get, list, watch, create, update, patch, delete |
+| `docspages` (docspage.io) | get, list, watch, create, update, patch, delete |
 | `docspages/status` | get, update, patch |
 | `docspages/finalizers` | update |
 | `deployments` (apps) | get, list, watch, create, update, patch, delete |

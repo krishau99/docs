@@ -1,31 +1,31 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: docspage-controller
+  name: docspage-operator
   namespace: docs
   labels:
-    app.kubernetes.io/name: docspage-controller
-    app.kubernetes.io/managed-by: docspage-controller
+    app.kubernetes.io/name: docspage-operator
+    app.kubernetes.io/managed-by: docspage-operator
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: docspage-controller
+      app.kubernetes.io/name: docspage-operator
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: docspage-controller
+        app.kubernetes.io/name: docspage-operator
     spec:
-      serviceAccountName: docspage-controller
+      serviceAccountName: docspage-operator
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
         runAsGroup: 65532
         fsGroup: 65532
       containers:
-        - name: controller
+        - name: operator
           # Update this image reference to match your registry
-          image: ghcr.io/krishau99/docs-controller:latest
+          image: ghcr.io/krishau99/docs-operator:latest
           imagePullPolicy: IfNotPresent
           args:
             - --leader-elect
