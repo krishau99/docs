@@ -24,8 +24,11 @@ spec:
         fsGroup: 65532
       containers:
         - name: operator
-          # Update this image reference to match your registry
-          image: ghcr.io/krishau99/docs-operator:latest
+          # Update this image reference to match your registry.
+          # A manifest cannot evaluate ${{ github.repository_owner }}, so the
+          # owner is literal here. The release workflow rewrites this line to
+          # the tagged image at release time, matching whichever owner it finds.
+          image: ghcr.io/3bab5a2843705818/docs-operator:latest
           imagePullPolicy: IfNotPresent
           args:
             - --leader-elect

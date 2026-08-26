@@ -9,6 +9,12 @@ permissions:
   contents: write
   packages: write
 
+env:
+  REGISTRY: ghcr.io
+  # Derived from the repository rather than hardcoded, so a repository that
+  # moves owner keeps publishing to a namespace it actually owns.
+  IMAGE_NAME: ${{ github.repository_owner }}/docs-operator
+
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
@@ -28,7 +34,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/krishau99/docs-operator
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -50,12 +56,16 @@ jobs:
 
       - name: Prepare release assets
         run: |
-          # Pin the image tag in a versioned copy of the deployment manifest
+          # Pin the image tag in a versioned copy of the deployment manifest.
           VERSION="${{ github.ref_name }}"
-          sed "s|ghcr.io/krishau99/docs-operator:latest|ghcr.io/krishau99/docs-operator:${VERSION}|g" \
+          # GHCR rejects uppercase image names, and an owner may contain them.
+          IMAGE="$(echo "${REGISTRY}/${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')"
+          # Matches whichever owner the checked-in manifest happens to name, so
+          # the manifest does not have to be edited when the repository moves.
+          sed -E "s|ghcr\\.io/[^/[:space:]]+/docs-operator:latest|${IMAGE}:${VERSION}|g" \
             deploy/deployment.yaml > /tmp/deployment-${VERSION}.yaml
           # Verify the substitution actually replaced something
-          grep -q "ghcr.io/krishau99/docs-operator:${VERSION}" /tmp/deployment-${VERSION}.yaml || \
+          grep -q "${IMAGE}:${VERSION}" /tmp/deployment-${VERSION}.yaml || \
             { echo "Image tag substitution failed — check deployment.yaml image reference"; exit 1; }
 
       - name: Create GitHub Release

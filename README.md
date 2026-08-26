@@ -190,8 +190,8 @@ In airgapped environments:
 
 1. **Mirror the operator image** to your private registry:
    ```bash
-   docker pull ghcr.io/krishau99/docs-operator:latest
-   docker tag ghcr.io/krishau99/docs-operator:latest registry.internal/docs-operator:latest
+   docker pull ghcr.io/3bab5a2843705818/docs-operator:latest
+   docker tag ghcr.io/3bab5a2843705818/docs-operator:latest registry.internal/docs-operator:latest
    docker push registry.internal/docs-operator:latest
    ```
 
