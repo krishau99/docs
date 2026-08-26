@@ -59,6 +59,51 @@ func prefixImage(registryURL, image string) string {
 	return registryURL + "/" + image
 }
 
+// ptrTo returns a pointer to v. The Kubernetes API types use pointers for
+// optional booleans so that "unset" stays distinguishable from false, and the
+// security contexts below need several of them.
+func ptrTo[T any](v T) *T { return &v }
+
+// restrictedPodSecurityContext returns the pod-level half of a security context
+// satisfying the restricted Pod Security Standard.
+//
+// RunAsUser is set explicitly rather than left to the images. Restricted
+// requires RunAsNonRoot, and the kubelet refuses to start a container whose
+// image would run as root when that is set; alpine/git declares no USER, so
+// without an explicit UID a build-mode pod would never start at all.
+//
+// FSGroup is deliberately not set. The emptyDir volumes the containers share
+// are created mode 0777, so every container can write to them whichever UID it
+// runs as, and setting FSGroup would additionally rewrite the ownership of the
+// mounted CA certificate to no purpose.
+func restrictedPodSecurityContext(dp *v1alpha1.DocsPage) *corev1.PodSecurityContext {
+	uid := runAsUser(dp)
+	return &corev1.PodSecurityContext{
+		RunAsNonRoot: ptrTo(true),
+		RunAsUser:    &uid,
+		SeccompProfile: &corev1.SeccompProfile{
+			Type: corev1.SeccompProfileTypeRuntimeDefault,
+		},
+	}
+}
+
+// restrictedContainerSecurityContext returns the container-level half. It is
+// the same for every container including the init containers, because the
+// standard is evaluated per container and one non-compliant container makes the
+// whole pod inadmissible.
+//
+// ReadOnlyRootFilesystem is not set. It is not part of the restricted standard,
+// and all three containers write outside their mounts — git to its temporary
+// files, zensical to its cache, httpd to /var/run and its logs.
+func restrictedContainerSecurityContext() *corev1.SecurityContext {
+	return &corev1.SecurityContext{
+		AllowPrivilegeEscalation: ptrTo(false),
+		Capabilities: &corev1.Capabilities{
+			Drop: []corev1.Capability{"ALL"},
+		},
+	}
+}
+
 // labelsForDocsPage returns standard labels for resources owned by a DocsPage.
 func labelsForDocsPage(name string) map[string]string {
 	return map[string]string{
@@ -188,6 +233,7 @@ func buildPodSpecForBuildMode(dp *v1alpha1.DocsPage, registryURL string, port in
 			"sh", "-c",
 			buildGitCloneCommand(dp),
 		},
+		SecurityContext: restrictedContainerSecurityContext(),
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: volumeWorkspace, MountPath: mountWorkspace},
 		},
@@ -237,9 +283,10 @@ func buildPodSpecForBuildMode(dp *v1alpha1.DocsPage, registryURL string, port in
 	}
 
 	buildInitContainer := corev1.Container{
-		Name:    "zensical-build",
-		Image:   buildImage,
-		Command: []string{"sh", "-c", buildZensicalBuildCommand()},
+		Name:            "zensical-build",
+		Image:           buildImage,
+		Command:         []string{"sh", "-c", buildZensicalBuildCommand()},
+		SecurityContext: restrictedContainerSecurityContext(),
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: volumeWorkspace, MountPath: mountWorkspace},
 			{Name: volumeOutput, MountPath: mountOutput},
@@ -253,8 +300,9 @@ func buildPodSpecForBuildMode(dp *v1alpha1.DocsPage, registryURL string, port in
 	// Main container: the caller-supplied image serving the built output.
 	// Its listen port is not configured here — see ServingSpec.
 	serveContainer := corev1.Container{
-		Name:  "serve",
-		Image: serveImage,
+		Name:            "serve",
+		Image:           serveImage,
+		SecurityContext: restrictedContainerSecurityContext(),
 		Ports: []corev1.ContainerPort{
 			{Name: "http", ContainerPort: port, Protocol: corev1.ProtocolTCP},
 		},
@@ -269,6 +317,7 @@ func buildPodSpecForBuildMode(dp *v1alpha1.DocsPage, registryURL string, port in
 	}
 
 	return corev1.PodSpec{
+		SecurityContext: restrictedPodSecurityContext(dp),
 		InitContainers: []corev1.Container{
 			gitInitContainer,
 			buildInitContainer,
@@ -318,8 +367,9 @@ func buildPodSpecForPrebuiltMode(dp *v1alpha1.DocsPage, registryURL string, port
 	}
 
 	mainContainer := corev1.Container{
-		Name:  "docs",
-		Image: image,
+		Name:            "docs",
+		Image:           image,
+		SecurityContext: restrictedContainerSecurityContext(),
 		Ports: []corev1.ContainerPort{
 			{Name: "http", ContainerPort: port, Protocol: corev1.ProtocolTCP},
 		},
@@ -328,8 +378,9 @@ func buildPodSpecForPrebuiltMode(dp *v1alpha1.DocsPage, registryURL string, port
 	}
 
 	return corev1.PodSpec{
-		Containers: []corev1.Container{mainContainer},
-		Volumes:    volumes,
+		SecurityContext: restrictedPodSecurityContext(dp),
+		Containers:      []corev1.Container{mainContainer},
+		Volumes:         volumes,
 	}
 }
 

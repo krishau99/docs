@@ -50,6 +50,32 @@ type TLSSpec struct {
 	CASecret string `json:"caSecret,omitempty"`
 }
 
+// SecuritySpec tunes the security context of the pods the operator generates.
+//
+// Those pods satisfy the restricted Pod Security Standard whether or not this
+// is set: every container drops all capabilities, disables privilege
+// escalation, uses the RuntimeDefault seccomp profile, and runs as a non-root
+// user. Only the UID is configurable, because it is the one part of that policy
+// that depends on the images being run rather than on the policy itself.
+type SecuritySpec struct {
+	// RunAsUser is the UID every container in the generated pod runs as.
+	//
+	// It has to be set explicitly rather than inherited from the images. The
+	// restricted standard requires runAsNonRoot, and the kubelet refuses to
+	// start a container whose image would otherwise run as root — alpine/git
+	// declares no USER, so without an explicit UID a build-mode pod would never
+	// start. The default suits the Red Hat httpd images and the builder image
+	// under images/; change it if your serving image expects a different UID.
+	//
+	// Zero is rejected. Running as root is what the restricted standard exists
+	// to prevent, and the operator will not generate a pod that a namespace
+	// enforcing it would refuse.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:default=1001
+	// +optional
+	RunAsUser int64 `json:"runAsUser,omitempty"`
+}
+
 // ServingSpec defines the serving configuration for the documentation.
 //
 // The operator does not configure the web server it runs. Whoever sets up a
@@ -161,6 +187,12 @@ type DocsPageSpec struct {
 	// The serving image is set under spec.serving.image, not here.
 	// +optional
 	Images *ImagesSpec `json:"images,omitempty"`
+
+	// Security tunes the security context of the generated pods. The generated
+	// pods satisfy the restricted Pod Security Standard whether or not this is
+	// set.
+	// +optional
+	Security SecuritySpec `json:"security,omitempty"`
 }
 
 // DocsPageStatus defines the observed state of DocsPage.

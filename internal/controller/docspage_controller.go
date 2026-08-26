@@ -26,6 +26,12 @@ const (
 
 	// defaultServingPort mirrors the CRD default for spec.serving.port.
 	defaultServingPort = 8080
+
+	// defaultRunAsUser mirrors the CRD default for spec.security.runAsUser.
+	// The CRD default only applies when spec.security is present at all, so
+	// this is not redundant: a DocsPage that omits the whole block arrives here
+	// with a zero UID and has to be defaulted in Go.
+	defaultRunAsUser = 1001
 )
 
 // Reasons carried on the Ready condition. Each one says which observation
@@ -514,6 +520,15 @@ func documentRoot(dp *v1alpha1.DocsPage) string {
 		return dp.Spec.Serving.DocumentRoot
 	}
 	return defaultDocumentRoot
+}
+
+// runAsUser returns the UID the generated pod's containers run as, or the CRD
+// default when spec.security was omitted entirely.
+func runAsUser(dp *v1alpha1.DocsPage) int64 {
+	if dp.Spec.Security.RunAsUser != 0 {
+		return dp.Spec.Security.RunAsUser
+	}
+	return defaultRunAsUser
 }
 
 // parsePollInterval parses a duration string like "5m" or "1h".

@@ -20,6 +20,7 @@ The operator is designed for **airgapped environments** with private container r
   - [Airgapped Environments](#airgapped-environments)
 - [TLS / CA Certificates](#tls--ca-certificates)
 - [Serving Images](#serving-images)
+- [Pod Security](#pod-security)
 - [Variable Substitution](#variable-substitution)
 - [Git Polling](#git-polling)
 - [CRD Self-Installation](#crd-self-installation)
@@ -312,6 +313,70 @@ default, the `zensical-build` init container exits 127 with
 [`images/README.md`](images/README.md).
 
 ---
+
+## Pod Security
+
+Everything the operator runs satisfies the [restricted Pod Security
+Standard](https://kubernetes.io/docs/concepts/security/pod-security-standards/#restricted):
+the operator's own Deployment, and every pod it generates in either mode.
+
+Each generated pod carries:
+
+```yaml
+securityContext:              # pod
+  runAsNonRoot: true
+  runAsUser: 1001
+  seccompProfile:
+    type: RuntimeDefault
+```
+
+and each of its containers — the `git-clone` and `zensical-build` init
+containers included, since the standard is evaluated per container:
+
+```yaml
+securityContext:              # container
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+```
+
+### Why the UID is explicit
+
+`runAsNonRoot: true` makes the kubelet refuse to start a container whose image
+would otherwise run as root, and `alpine/git` declares no `USER`. Left to the
+images, a build-mode pod would never start. So the UID is set on the pod rather
+than inherited, and it is the one part of the policy you can change:
+
+```yaml
+spec:
+  security:
+    runAsUser: 1001   # default
+```
+
+1001 suits the Red Hat httpd images and the builder image under `images/`.
+Change it if your serving image expects a different UID — `nginx-unprivileged`
+wants 101, for instance. Zero is rejected by the schema.
+
+`fsGroup` is deliberately not set: the `emptyDir` volumes the containers share
+are created mode 0777, so each container can write to them whatever UID it runs
+as. `readOnlyRootFilesystem` is not set either — it is not part of the
+restricted standard, and all three containers write outside their mounts.
+
+### Enforcing it
+
+`deploy/namespace.yaml` labels the namespace `warn` and `audit` at the
+restricted level, which surfaces violations without blocking anything. Switch
+those to `enforce` when you are confident every serving image in the namespace
+tolerates a non-root UID:
+
+```yaml
+pod-security.kubernetes.io/enforce: restricted
+pod-security.kubernetes.io/enforce-version: latest
+```
+
+Enforcement rejects a violating pod at admission rather than letting it fail at
+runtime, which is the better failure — but whether your images can take it is a
+question about your images, so the operator does not decide it for you.
 
 ## Variable Substitution
 

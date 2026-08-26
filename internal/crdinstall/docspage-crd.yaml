@@ -196,6 +196,26 @@ spec:
                       description: |
                         Zensical is the image used for the zensical-build init container.
                         Defaults to "zensical/zensical:latest".
+                security:
+                  type: object
+                  description: |
+                    Security tunes the security context of the generated pods. Those pods
+                    satisfy the restricted Pod Security Standard whether or not this is set:
+                    every container drops all capabilities, disables privilege escalation,
+                    uses the RuntimeDefault seccomp profile, and runs as a non-root user.
+                  properties:
+                    runAsUser:
+                      type: integer
+                      format: int64
+                      minimum: 1
+                      default: 1001
+                      description: |
+                        RunAsUser is the UID every container in the generated pod runs as.
+                        It is set explicitly rather than inherited from the images, because
+                        restricted requires runAsNonRoot and the kubelet refuses to start a
+                        container whose image would otherwise run as root. The default suits
+                        the Red Hat httpd images and the builder image under images/. Zero is
+                        rejected: running as root is what restricted exists to prevent.
             status:
               type: object
               description: DocsPageStatus defines the observed state of DocsPage.

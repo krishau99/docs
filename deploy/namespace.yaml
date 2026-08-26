@@ -4,3 +4,17 @@ metadata:
   name: docs
   labels:
     app.kubernetes.io/managed-by: docspage-operator
+
+    # The operator and the pods it generates both satisfy the restricted Pod
+    # Security Standard. These labels surface any violation — in the API
+    # response on create, and in the audit log — without blocking anything.
+    #
+    # Change warn/audit to enforce once you are confident every serving image
+    # in this namespace tolerates a non-root UID. Enforcement rejects a
+    # violating pod at admission rather than letting it fail at runtime, which
+    # is the better failure, but it is a decision about your images rather than
+    # about the operator, so it is not made for you here.
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
