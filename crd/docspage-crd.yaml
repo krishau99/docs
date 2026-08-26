@@ -136,8 +136,32 @@ spec:
                         Gitea, and other services.
                 serving:
                   type: object
-                  description: Serving defines the serving configuration.
+                  description: |
+                    Serving defines the serving configuration.
+
+                    The operator does not configure the web server it runs. Whoever sets up a
+                    DocsPage is responsible for supplying an image that already listens on port
+                    and serves documentRoot; the operator only mounts the built site, exposes
+                    the port and points a Service at it.
                   properties:
+                    image:
+                      type: string
+                      description: |
+                        Image is the container image that serves the built documentation.
+                        Required when mode is "build".
+
+                        The image must listen on port and serve static files from documentRoot.
+                        The operator does not inject or rewrite any web server configuration, so
+                        an image whose listen port differs from port will start successfully and
+                        then refuse connections from the Service.
+                    documentRoot:
+                      type: string
+                      description: |
+                        DocumentRoot is the path inside the serving container where the built
+                        documentation is mounted. Change it to match the image: for example
+                        "/usr/share/nginx/html" for nginx.
+                        Only used when mode is "build".
+                      default: /usr/local/apache2/htdocs
                     replicas:
                       type: integer
                       format: int32
@@ -147,15 +171,17 @@ spec:
                     port:
                       type: integer
                       format: int32
-                      description: Port is the port on which the documentation is served.
+                      description: |
+                        Port is the port the serving container listens on, and the port the
+                        Service exposes. The image referenced by image must already listen here.
                       default: 8080
                       minimum: 1
                       maximum: 65535
                 images:
                   type: object
                   description: |
-                    Images allows overriding the default container images used in build mode.
-                    This appends to the existing setup and allows overriding the git, zensical, and apache images.
+                    Images allows overriding the build toolchain images used in build mode.
+                    The serving image is set under spec.serving.image, not here.
                   properties:
                     git:
                       type: string
@@ -167,11 +193,6 @@ spec:
                       description: |
                         Zensical is the image used for the zensical-build init container.
                         Defaults to "zensical/zensical:latest".
-                    apache:
-                      type: string
-                      description: |
-                        Apache is the image used for the Apache serving container.
-                        Defaults to "httpd:2.4-alpine".
             status:
               type: object
               description: DocsPageStatus defines the observed state of DocsPage.

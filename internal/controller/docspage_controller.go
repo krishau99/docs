@@ -22,6 +22,9 @@ import (
 const (
 	conditionTypeReady = "Ready"
 	finalizerName      = "docspage/finalizer"
+
+	// defaultServingPort mirrors the CRD default for spec.serving.port.
+	defaultServingPort = 8080
 )
 
 // DocsPageReconciler reconciles a DocsPage object.
@@ -104,6 +107,16 @@ func (r *DocsPageReconciler) reconcileBuildMode(ctx context.Context, dp *v1alpha
 		return fmt.Errorf("mode is 'build' but spec.repo.url is not set")
 	}
 
+	// The operator does not configure the web server, so an unset serving image
+	// has no safe default: anything it picked would listen wherever that image
+	// happens to listen, not on spec.serving.port. Fail loudly instead.
+	if dp.Spec.Serving.Image == "" {
+		return fmt.Errorf(
+			"mode is 'build' but spec.serving.image is not set; "+
+				"supply an image that listens on port %d and serves %s",
+			servingPort(dp), documentRoot(dp))
+	}
+
 	registryURL := ""
 	if dp.Spec.Registry != nil {
 		registryURL = dp.Spec.Registry.URL
@@ -142,6 +155,12 @@ func (r *DocsPageReconciler) reconcileBuildMode(ctx context.Context, dp *v1alpha
 
 // reconcilePrebuiltMode handles reconciliation for mode=prebuilt.
 func (r *DocsPageReconciler) reconcilePrebuiltMode(ctx context.Context, dp *v1alpha1.DocsPage) error {
+	if dp.Spec.Image == "" {
+		return fmt.Errorf(
+			"mode is 'prebuilt' but spec.image is not set; "+
+				"supply an image that listens on port %d", servingPort(dp))
+	}
+
 	registryURL := ""
 	if dp.Spec.Registry != nil {
 		registryURL = dp.Spec.Registry.URL
@@ -324,6 +343,23 @@ func (r *DocsPageReconciler) setCondition(ctx context.Context, dp *v1alpha1.Docs
 	}
 
 	return r.Status().Update(ctx, dp)
+}
+
+// servingPort returns the configured serving port, or the CRD default when the
+// resource predates that default being applied.
+func servingPort(dp *v1alpha1.DocsPage) int32 {
+	if dp.Spec.Serving.Port != 0 {
+		return dp.Spec.Serving.Port
+	}
+	return defaultServingPort
+}
+
+// documentRoot returns the configured document root, or the httpd-shaped default.
+func documentRoot(dp *v1alpha1.DocsPage) string {
+	if dp.Spec.Serving.DocumentRoot != "" {
+		return dp.Spec.Serving.DocumentRoot
+	}
+	return defaultDocumentRoot
 }
 
 // parsePollInterval parses a duration string like "5m" or "1h".

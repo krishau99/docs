@@ -23,10 +23,15 @@ const (
 	mountOutput    = "/output"
 	mountCA        = "/etc/ssl/certs/custom-ca.crt"
 
-	// Default images (can be overridden by prepending registry.url)
-	defaultGitImage      = "alpine/git:latest"
-	defaultBuildImage    = "zensical/zensical:latest"
-	defaultServingImage  = "httpd:2.4-alpine"
+	// Default build toolchain images (can be overridden by prepending registry.url).
+	// There is deliberately no default serving image: the serving container has
+	// to listen on spec.serving.port, and only whoever configures the DocsPage
+	// knows which image does.
+	defaultGitImage   = "alpine/git:latest"
+	defaultBuildImage = "zensical/zensical:latest"
+
+	// Fallback document root, matching the layout of httpd-based images.
+	defaultDocumentRoot = "/usr/local/apache2/htdocs"
 
 	// Annotation used to trigger rolling restarts
 	annotationRestartedAt = "docspage/restartedAt"
@@ -72,10 +77,7 @@ func buildDeployment(dp *v1alpha1.DocsPage, registryURL, currentSHA string) *app
 		replicas = *dp.Spec.Serving.Replicas
 	}
 
-	port := int32(8080)
-	if dp.Spec.Serving.Port != 0 {
-		port = dp.Spec.Serving.Port
-	}
+	port := servingPort(dp)
 
 	var podSpec corev1.PodSpec
 	if dp.Spec.Mode == v1alpha1.DocsPageModeBuild {
@@ -114,12 +116,11 @@ func buildDeployment(dp *v1alpha1.DocsPage, registryURL, currentSHA string) *app
 // buildPodSpecForBuildMode builds the pod spec for mode=build.
 // Volumes:
 //   - workspace (emptyDir): shared between init containers and main container
-//   - output (emptyDir): built documentation, shared with Apache
+//   - output (emptyDir): built documentation, mounted into the serving container
 //   - ca-cert (secret volume): optional custom CA certificate
 func buildPodSpecForBuildMode(dp *v1alpha1.DocsPage, registryURL string, port int32) corev1.PodSpec {
 	gitImageRef := defaultGitImage
 	buildImageRef := defaultBuildImage
-	serveImageRef := defaultServingImage
 
 	if dp.Spec.Images != nil {
 		if dp.Spec.Images.Git != "" {
@@ -128,14 +129,12 @@ func buildPodSpecForBuildMode(dp *v1alpha1.DocsPage, registryURL string, port in
 		if dp.Spec.Images.Zensical != "" {
 			buildImageRef = dp.Spec.Images.Zensical
 		}
-		if dp.Spec.Images.Apache != "" {
-			serveImageRef = dp.Spec.Images.Apache
-		}
 	}
 
 	gitImage := prefixImage(registryURL, gitImageRef)
 	buildImage := prefixImage(registryURL, buildImageRef)
-	serveImage := prefixImage(registryURL, serveImageRef)
+	// Validated by the reconciler before we get here.
+	serveImage := prefixImage(registryURL, dp.Spec.Serving.Image)
 
 	volumes := []corev1.Volume{
 		{
@@ -251,21 +250,22 @@ func buildPodSpecForBuildMode(dp *v1alpha1.DocsPage, registryURL string, port in
 		buildInitContainer.VolumeMounts = append(buildInitContainer.VolumeMounts, caVolumeMount)
 	}
 
-	// Main container: Apache serving the built output
-	apacheContainer := corev1.Container{
-		Name:  "apache",
+	// Main container: the caller-supplied image serving the built output.
+	// Its listen port is not configured here — see ServingSpec.
+	serveContainer := corev1.Container{
+		Name:  "serve",
 		Image: serveImage,
 		Ports: []corev1.ContainerPort{
 			{Name: "http", ContainerPort: port, Protocol: corev1.ProtocolTCP},
 		},
 		VolumeMounts: []corev1.VolumeMount{
-			{Name: volumeOutput, MountPath: "/usr/local/apache2/htdocs"},
+			{Name: volumeOutput, MountPath: documentRoot(dp)},
 		},
 		Env: []corev1.EnvVar{},
 	}
 	if caSecretName != "" {
-		apacheContainer.VolumeMounts = append(apacheContainer.VolumeMounts, caVolumeMount)
-		apacheContainer.Env = append(apacheContainer.Env, caEnvVar)
+		serveContainer.VolumeMounts = append(serveContainer.VolumeMounts, caVolumeMount)
+		serveContainer.Env = append(serveContainer.Env, caEnvVar)
 	}
 
 	return corev1.PodSpec{
@@ -274,7 +274,7 @@ func buildPodSpecForBuildMode(dp *v1alpha1.DocsPage, registryURL string, port in
 			buildInitContainer,
 		},
 		Containers: []corev1.Container{
-			apacheContainer,
+			serveContainer,
 		},
 		Volumes: volumes,
 	}
@@ -282,11 +282,8 @@ func buildPodSpecForBuildMode(dp *v1alpha1.DocsPage, registryURL string, port in
 
 // buildPodSpecForPrebuiltMode builds the pod spec for mode=prebuilt.
 func buildPodSpecForPrebuiltMode(dp *v1alpha1.DocsPage, registryURL string, port int32) corev1.PodSpec {
-	image := dp.Spec.Image
-	if image == "" {
-		image = defaultServingImage
-	}
-	image = prefixImage(registryURL, image)
+	// Validated by the reconciler before we get here.
+	image := prefixImage(registryURL, dp.Spec.Image)
 
 	volumes := []corev1.Volume{}
 	caSecretName := ""
@@ -340,10 +337,7 @@ func buildPodSpecForPrebuiltMode(dp *v1alpha1.DocsPage, registryURL string, port
 func buildService(dp *v1alpha1.DocsPage) *corev1.Service {
 	labels := labelsForDocsPage(dp.Name)
 
-	port := int32(8080)
-	if dp.Spec.Serving.Port != 0 {
-		port = dp.Spec.Serving.Port
-	}
+	port := servingPort(dp)
 
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -407,7 +401,7 @@ git clone --depth 1 --branch %s "$AUTHENTICATED_URL" %s`,
 // buildZensicalBuildCommand generates the shell command used in the Zensical build init container.
 // It runs envsubst on all .md and .toml files in the workspace, then builds with Zensical.
 // Zensical outputs to ./site (i.e. /workspace/site) by default; the built files are then
-// moved to the output volume (/output) so Apache can serve them.
+// moved to the output volume (/output), which is mounted into the serving container.
 func buildZensicalBuildCommand() string {
 	return `set -e
 cd ` + mountWorkspace + `

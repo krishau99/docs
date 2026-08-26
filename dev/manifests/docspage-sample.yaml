@@ -32,8 +32,9 @@ spec:
     BASE_URL: https://docs.localtest.me
 
   serving:
+    # Required. Must already listen on serving.port and serve documentRoot —
+    # the operator does not configure the web server.
+    image: CHANGE-ME/docs-server:8080
+    port: 8080
+    documentRoot: /usr/local/apache2/htdocs
     replicas: 1
-    # httpd:2.4-alpine has "Listen 80" in its default config and the operator
-    # does not override it, so the Service has to target 80 for anything to
-    # answer. Setting this to 8080 reproduces that.
-    port: 80

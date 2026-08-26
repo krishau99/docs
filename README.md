@@ -2,7 +2,7 @@
 
 A Kubernetes operator for managing documentation page deployments using the `DocsPage` custom resource. The operator supports two modes:
 
-- **`build`**: Clone a git repository, substitute variables, build with Zensical, and serve with Apache.
+- **`build`**: Clone a git repository, substitute variables, build with Zensical, and serve the result with an image you supply.
 - **`prebuilt`**: Deploy a pre-existing documentation image directly.
 
 The operator is designed for **airgapped environments** with private container registries and custom CA certificates. It **self-installs its CRD on startup** — no separate Helm CRD install step needed.
@@ -19,6 +19,7 @@ The operator is designed for **airgapped environments** with private container r
 - [Deploying the Operator](#deploying-the-operator)
   - [Airgapped Environments](#airgapped-environments)
 - [TLS / CA Certificates](#tls--ca-certificates)
+- [Serving Images](#serving-images)
 - [Variable Substitution](#variable-substitution)
 - [Git Polling](#git-polling)
 - [CRD Self-Installation](#crd-self-installation)
@@ -43,7 +44,7 @@ The DocsPage operator watches `DocsPage` resources across all namespaces and man
 
 ### Mode: `build`
 
-Clones a git repository, substitutes variables, builds with Zensical, and serves the output with Apache.
+Clones a git repository, substitutes variables, builds with Zensical, and serves the output with an image you supply.
 
 ```yaml
 apiVersion: docspage.io/v1alpha1
@@ -81,16 +82,18 @@ spec:
   tls:
     caSecret: custom-ca-cert  # Secret with key: ca.crt
 
-  # Serving configuration
+  # Serving configuration. See "Serving images" below — spec.serving.image is
+  # required in build mode and must already listen on spec.serving.port.
   serving:
-    replicas: 1
+    image: registry.internal/docs-httpd:8080
     port: 8080
+    documentRoot: /usr/local/apache2/htdocs
+    replicas: 1
 
-  # Optional: override default container images used in build mode
+  # Optional: override the build toolchain images
   # images:
   #   git: alpine/git:latest
   #   zensical: zensical/zensical:latest
-  #   apache: httpd:2.4-alpine
 ```
 
 **How build mode works:**
@@ -108,8 +111,10 @@ The generated Deployment has three containers:
    - Runs `zensical build` (default output directory is `./site`, i.e. `/workspace/site`)
    - Moves the built files from `/workspace/site` to `/output`
 
-3. **Main container `apache`** (`httpd:2.4-alpine` or prefixed):
-   - Serves the built documentation from `/output` via Apache
+3. **Main container `serve`** (`spec.serving.image`, prefixed with `registry.url` if set):
+   - Has the built documentation mounted at `spec.serving.documentRoot`
+   - Is expected to already listen on `spec.serving.port`; the operator does not
+     configure it. See [Serving images](#serving-images).
 
 ### Mode: `prebuilt`
 
@@ -124,7 +129,7 @@ metadata:
 spec:
   mode: prebuilt
 
-  # The pre-built documentation image
+  # The pre-built documentation image. Must already listen on serving.port.
   image: registry.internal/docs-legacy:latest
 
   # Optional: if image doesn't start with a registry host, prepend this
@@ -232,6 +237,39 @@ data:
 ```
 
 The CA certificate is mounted at `/etc/ssl/certs/custom-ca.crt` in all containers that need TLS (git clone, zensical build, and Apache main container). The `SSL_CERT_FILE` and `GIT_SSL_CAINFO` environment variables are set automatically.
+
+---
+
+## Serving Images
+
+The operator does not configure the web server that serves your documentation.
+It mounts the built site, sets `containerPort`, and points a Service at
+`spec.serving.port` — nothing more. **Supplying an image that already listens
+on that port is the responsibility of whoever configures the DocsPage.**
+
+This applies to both modes:
+
+| Mode | Field | Required |
+|---|---|---|
+| `build` | `spec.serving.image` | yes |
+| `prebuilt` | `spec.image` | yes |
+
+If the field is unset, the DocsPage reports a `ReconcileError` condition naming
+the port the image is expected to listen on, rather than defaulting to
+something that would start cleanly and then refuse connections.
+
+`spec.serving.documentRoot` controls where the built site is mounted inside the
+serving container. It defaults to `/usr/local/apache2/htdocs`, which suits
+httpd-based images; point it at `/usr/share/nginx/html` for nginx, or wherever
+your image expects to find static files.
+
+### A note on the stock images
+
+`httpd:2.4-alpine` and `nginx:alpine` both listen on port 80 out of the box.
+Using either unmodified means setting `spec.serving.port: 80`, which in turn
+means the container runs as root to bind a privileged port. The usual approach
+is a thin image built on top that listens on 8080 — that is what
+`spec.serving.image` exists for.
 
 ---
 

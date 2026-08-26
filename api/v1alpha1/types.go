@@ -9,7 +9,8 @@ import (
 type DocsPageMode string
 
 const (
-	// DocsPageModeBuild clones a git repo, substitutes variables, builds with Zensical, and serves with Apache.
+	// DocsPageModeBuild clones a git repo, substitutes variables, builds with Zensical,
+	// and serves the result with the image set in spec.serving.image.
 	DocsPageModeBuild DocsPageMode = "build"
 	// DocsPageModePrebuilt deploys a pre-existing documentation image directly.
 	DocsPageModePrebuilt DocsPageMode = "prebuilt"
@@ -50,14 +51,38 @@ type TLSSpec struct {
 }
 
 // ServingSpec defines the serving configuration for the documentation.
+//
+// The operator does not configure the web server it runs. Whoever sets up a
+// DocsPage is responsible for supplying an Image that already listens on Port
+// and serves DocumentRoot; the operator only mounts the built site, exposes
+// the port and points a Service at it.
 type ServingSpec struct {
+	// Image is the container image that serves the built documentation.
+	// Required when mode is "build".
+	//
+	// The image must listen on Port and serve static files from DocumentRoot.
+	// The operator does not inject or rewrite any web server configuration, so
+	// an image whose listen port differs from Port will start successfully and
+	// then refuse connections from the Service.
+	// +optional
+	Image string `json:"image,omitempty"`
+
+	// DocumentRoot is the path inside the serving container where the built
+	// documentation is mounted. Change it to match the image: for example
+	// "/usr/share/nginx/html" for nginx.
+	// Only used when mode is "build".
+	// +kubebuilder:default="/usr/local/apache2/htdocs"
+	// +optional
+	DocumentRoot string `json:"documentRoot,omitempty"`
+
 	// Replicas is the number of replicas for the serving Deployment.
 	// +kubebuilder:default=1
 	// +kubebuilder:validation:Minimum=0
 	// +optional
 	Replicas *int32 `json:"replicas,omitempty"`
 
-	// Port is the port on which the documentation is served.
+	// Port is the port the serving container listens on, and the port the
+	// Service exposes. The image referenced by Image must already listen here.
 	// +kubebuilder:default=8080
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=65535
@@ -65,7 +90,9 @@ type ServingSpec struct {
 	Port int32 `json:"port,omitempty"`
 }
 
-// ImagesSpec defines optional image overrides for the build mode containers.
+// ImagesSpec defines optional image overrides for the build toolchain used in
+// build mode. The serving image is configured separately, under
+// spec.serving.image.
 type ImagesSpec struct {
 	// Git is the image used for the git-clone init container.
 	// Defaults to "alpine/git:latest".
@@ -76,11 +103,6 @@ type ImagesSpec struct {
 	// Defaults to "zensical/zensical:latest".
 	// +optional
 	Zensical string `json:"zensical,omitempty"`
-
-	// Apache is the image used for the Apache serving container.
-	// Defaults to "httpd:2.4-alpine".
-	// +optional
-	Apache string `json:"apache,omitempty"`
 }
 
 // DocsPageSpec defines the desired state of DocsPage.
@@ -93,7 +115,9 @@ type DocsPageSpec struct {
 	Mode DocsPageMode `json:"mode"`
 
 	// Image is the pre-built documentation image to deploy.
-	// Only used when mode is "prebuilt".
+	// Required when mode is "prebuilt".
+	//
+	// As in build mode, the image must already listen on spec.serving.port.
 	// +optional
 	Image string `json:"image,omitempty"`
 
@@ -133,8 +157,8 @@ type DocsPageSpec struct {
 	// +optional
 	Serving ServingSpec `json:"serving,omitempty"`
 
-	// Images allows overriding the default container images used in build mode.
-	// This appends to the existing setup and allows overriding the git, zensical, and apache images.
+	// Images allows overriding the build toolchain images used in build mode.
+	// The serving image is set under spec.serving.image, not here.
 	// +optional
 	Images *ImagesSpec `json:"images,omitempty"`
 }

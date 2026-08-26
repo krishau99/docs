@@ -1,6 +1,6 @@
 # Example DocsPage with mode: build
 # This deploys a documentation site by cloning from Gitea, substituting variables,
-# building with Zensical, and serving with Apache.
+# building with Zensical, and serving it with an image you supply.
 apiVersion: docspage.io/v1alpha1
 kind: DocsPage
 metadata:
@@ -37,16 +37,22 @@ spec:
   tls:
     caSecret: custom-ca-cert
 
-  # Serving configuration
+  # Serving configuration.
+  #
+  # The operator does not configure the web server. This image must already
+  # listen on serving.port and serve files from serving.documentRoot — the
+  # stock httpd and nginx images listen on 80, so they need a port override
+  # baked in, or serving.port set to match them.
   serving:
-    replicas: 1
+    image: registry.internal/docs-httpd:8080
     port: 8080
+    documentRoot: /usr/local/apache2/htdocs
+    replicas: 1
 
-  # Optional: override the default images used in build mode
+  # Optional: override the build toolchain images
   # images:
   #   git: alpine/git:latest
   #   zensical: zensical/zensical:latest
-  #   apache: httpd:2.4-alpine
 
 ---
 # Git credentials secret (create this separately with your actual credentials)

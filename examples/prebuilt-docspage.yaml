@@ -8,7 +8,8 @@ metadata:
 spec:
   mode: prebuilt
 
-  # The pre-built documentation image to deploy
+  # The pre-built documentation image to deploy. It must already listen on
+  # spec.serving.port — the operator does not configure the web server.
   # If the image doesn't already contain a registry host (e.g., "registry.internal/"),
   # the operator will prepend spec.registry.url automatically.
   image: registry.internal/docs-legacy:latest
