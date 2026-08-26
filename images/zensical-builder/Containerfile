@@ -1,0 +1,29 @@
+# Build-toolchain image for DocsPage `build` mode.
+#
+# The operator's zensical-build init container runs envsubst over the cloned
+# repository before invoking `zensical build`. envsubst is part of GNU gettext,
+# which the upstream zensical image does not ship: it is Alpine-based with no
+# gettext installed. Without it that init container exits 127 with
+# "sh: envsubst: not found" once per source file and the pod never starts, so
+# a DocsPage in build mode cannot work against the upstream image at all.
+#
+# Reference this image from spec.images.zensical.
+
+ARG BASE_REGISTRY=docker.io
+ARG BASE_IMAGE=zensical/zensical
+ARG BASE_TAG=latest
+
+FROM ${BASE_REGISTRY}/${BASE_IMAGE}:${BASE_TAG}
+
+# apk needs root. The operator overrides the command with `sh -c` anyway, so
+# the upstream entrypoint and default command are not used.
+USER root
+
+# gettext-envsubst rather than the full gettext package: it is the subpackage
+# that carries /usr/bin/envsubst and it costs about 0.5 MiB against gettext's
+# 8 MiB, which also drags in libxml2. If a mirror does not carry the
+# subpackage, `gettext` works as a fallback.
+RUN apk add --no-cache gettext-envsubst
+
+# Fail the build rather than the pod if the base image layout ever changes.
+RUN command -v envsubst >/dev/null && command -v zensical >/dev/null

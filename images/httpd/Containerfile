@@ -1,0 +1,43 @@
+# Serving image for DocsPage.
+#
+# The operator does not configure the web server — it mounts the built site at
+# spec.serving.documentRoot, sets containerPort, and points a Service at
+# spec.serving.port. Matching those two settings to the image is the caller's
+# job. See the "Serving Images" section of the top-level README.
+#
+# ubi10/httpd-24 already satisfies both without modification: it listens on
+# 0.0.0.0:8080 as uid 1001 and its DocumentRoot is /var/www/html. So a DocsPage
+# using this image wants:
+#
+#   serving:
+#     image: <this image>
+#     port: 8080
+#     documentRoot: /var/www/html
+#
+# What this file adds on top is the CA trust and the httpd-cfg change carried
+# over from the production Containerfile, so the image built here has the same
+# shape as the one actually deployed.
+
+ARG BASE_REGISTRY=registry.access.redhat.com
+ARG BASE_IMAGE=ubi10/httpd-24
+ARG BASE_TAG=10.0
+
+FROM ${BASE_REGISTRY}/${BASE_IMAGE}:${BASE_TAG}
+
+USER root
+
+# Everything in ca-trust/ is added to the system trust store. The directory is
+# committed containing only a .gitkeep so this builds unchanged in the kind
+# environment; for a real build, drop FPKI_PROD_rootCA.pem and
+# FPKI_DEV_rootCA.pem in there. update-ca-trust ignores non-certificate files.
+COPY ca-trust/ /etc/pki/ca-trust/source/anchors/
+RUN update-ca-trust extract
+
+# Carried over verbatim from the production Containerfile. The operator mounts
+# only the document root, so this has no effect on a DocsPage deployment; it is
+# here so the image built from this repository matches the one you run.
+RUN sed -i 's/rm -rf \${dir}\/httpd-cfg/# rm -rf \${dir}\/httpd-cfg/g'  /usr/share/container-scripts/httpd/common.sh
+
+USER 1001
+
+EXPOSE 8080

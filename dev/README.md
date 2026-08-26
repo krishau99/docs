@@ -1,9 +1,28 @@
 # Local development environment
 
-`dev/kind-dev-deploy.sh` creates a minimal single-node kind cluster and runs
-the DocsPage operator in it. Nothing else is installed — no git server, no
-ingress controller, no certificates. Pods reach the internet through the node,
-so a `DocsPage` can clone straight from GitHub.
+`dev/kind-dev-deploy.sh` creates a minimal single-node kind cluster, builds the
+three images a build-mode `DocsPage` needs, loads them, and runs the DocsPage
+operator. Nothing else is installed — no git server, no ingress controller, no
+certificates. Pods reach the internet through the node, so a `DocsPage` can
+clone straight from GitHub.
+
+## Images
+
+| Image | Built from | Used as |
+|---|---|---|
+| `localhost/docspage-operator:local` | `Dockerfile` | the operator Deployment |
+| `localhost/docspage-zensical:local` | `images/zensical-builder` | `spec.images.zensical` |
+| `localhost/docspage-httpd:local` | `images/httpd` | `spec.serving.image` |
+
+The last two are built here rather than left to the reader because without them
+a build-mode DocsPage cannot start: the upstream `zensical/zensical` image has
+no `envsubst`, which the operator's build step requires, and the operator has no
+default serving image by design. Both are loaded before the script finishes, so
+`dev/manifests/docspage-sample.yaml` can be applied as-is.
+
+They are tagged `:local` deliberately. A `:latest` tag would flip the default
+pull policy to `Always` and the kubelet would ignore the loaded copy and try to
+pull from a registry.
 
 ## Prerequisites
 
@@ -19,7 +38,7 @@ with an opaque error.
 ## Quickstart
 
 ```bash
-./dev/kind-dev-deploy.sh                 # create cluster, build, deploy
+./dev/kind-dev-deploy.sh                 # create cluster, build images, deploy
 ./dev/kind-dev-deploy.sh --skip-build    # redeploy without rebuilding
 ./dev/kind-dev-deploy.sh --recreate      # start from a clean cluster
 ./dev/kind-dev-deploy.sh --engine docker # if you are not on Podman
@@ -40,9 +59,14 @@ kubectl logs -n docs deploy/docspage-operator -f
 
 ## Notes
 
-The image is loaded through a `docker-archive` rather than
+Images are loaded through a `docker-archive` rather than
 `kind load docker-image`, because that path behaves identically under Podman
 and Docker.
+
+The httpd image pulls `registry.access.redhat.com/ubi10/httpd-24`, which needs
+no credentials but does need outbound network at build time. Both image
+directories take `BASE_REGISTRY`, `BASE_IMAGE` and `BASE_TAG` build arguments if
+you need to point them at a mirror.
 
 Against GitHub, the operator's git smart-HTTP polling works, but its Gitea API
 fallback will not — that is fine, the fallback only runs if the primary path

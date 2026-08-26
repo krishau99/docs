@@ -221,7 +221,10 @@ In airgapped environments:
    docker push registry.internal/docs-operator:latest
    ```
 
-2. **Mirror dependent images** (`alpine/git`, `zensical/builder`, `httpd:2.4-alpine`) to your registry.
+2. **Mirror dependent images** (`alpine/git`, plus whatever you build from
+   `images/`) to your registry. Note that the zensical builder cannot be
+   mirrored unmodified — it needs gettext layered on, which is what
+   `images/zensical-builder` is for.
 
 3. **Update `deploy/deployment.yaml`** to reference your registry.
 
@@ -291,6 +294,22 @@ Using either unmodified means setting `spec.serving.port: 80`, which in turn
 means the container runs as root to bind a privileged port. The usual approach
 is a thin image built on top that listens on 8080 — that is what
 `spec.serving.image` exists for.
+
+`registry.access.redhat.com/ubi10/httpd-24` is the exception: it already listens
+on `0.0.0.0:8080` as uid 1001, with `DocumentRoot /var/www/html`, so it works
+untouched given the matching `port` and `documentRoot`. `images/httpd` in this
+repository builds on it, adding a CA trust bundle.
+
+### The build toolchain image
+
+`spec.images.zensical` is documented as an override, but in practice it is
+required: the build step runs `envsubst`, which comes from GNU gettext, and the
+upstream `zensical/zensical` image is Alpine with no gettext. Left at the
+default, the `zensical-build` init container exits 127 with
+`sh: envsubst: not found` and the pod never leaves `Init:Error`.
+
+`images/zensical-builder` builds the upstream image plus gettext. See
+[`images/README.md`](images/README.md).
 
 ---
 

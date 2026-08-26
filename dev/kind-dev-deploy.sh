@@ -6,6 +6,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLUSTER_NAME="${KIND_CLUSTER_NAME:-docspage}"
 OPERATOR_NAMESPACE="${DOCSPAGE_OPERATOR_NAMESPACE:-docs}"
 OPERATOR_IMAGE="${DOCSPAGE_OPERATOR_IMAGE:-localhost/docspage-operator:local}"
+ZENSICAL_IMAGE="${DOCSPAGE_ZENSICAL_IMAGE:-localhost/docspage-zensical:local}"
+HTTPD_IMAGE="${DOCSPAGE_HTTPD_IMAGE:-localhost/docspage-httpd:local}"
 ENGINE="${DOCSPAGE_CONTAINER_ENGINE:-podman}"
 
 SKIP_BUILD=false
@@ -15,8 +17,13 @@ usage() {
   cat <<EOF
 Usage: $0 [options]
 
-Creates or reuses a minimal single-node kind cluster, builds the DocsPage
-operator image, loads it into the cluster, and applies deploy/.
+Creates or reuses a minimal single-node kind cluster, builds three images,
+loads them into the cluster, and applies deploy/.
+
+The images are the operator itself and the two under images/ that a build-mode
+DocsPage needs: a zensical builder with envsubst installed, and an httpd image
+serving 8080. They are loaded before any DocsPage exists so the sample manifest
+can be applied straight away.
 
 Nothing else is installed. Pods reach the internet through the node, so a
 DocsPage can point straight at a GitHub repository.
@@ -25,13 +32,15 @@ Options:
   --cluster-name NAME   kind cluster name       (default: ${CLUSTER_NAME})
   --image IMAGE         operator image tag      (default: ${OPERATOR_IMAGE})
   --engine ENGINE       podman or docker        (default: ${ENGINE})
-  --skip-build          reuse an already-built image
+  --skip-build          reuse already-built images
   --recreate            delete the cluster first
   -h, --help            show this message
 
 Environment overrides:
   KIND_CLUSTER_NAME            default: ${CLUSTER_NAME}
   DOCSPAGE_OPERATOR_IMAGE      default: ${OPERATOR_IMAGE}
+  DOCSPAGE_ZENSICAL_IMAGE      default: ${ZENSICAL_IMAGE}
+  DOCSPAGE_HTTPD_IMAGE         default: ${HTTPD_IMAGE}
   DOCSPAGE_OPERATOR_NAMESPACE  default: ${OPERATOR_NAMESPACE}
   DOCSPAGE_CONTAINER_ENGINE    default: ${ENGINE}
 
@@ -120,22 +129,45 @@ kubectl config use-context "kind-${CLUSTER_NAME}" >/dev/null
 kubectl wait --for=condition=Ready node --all --timeout=3m
 
 # ---------------------------------------------------------------------------
-# Operator image
+# Images
+#
+# Three of them: the operator, and the two support images under images/. The
+# support images are built here rather than left to the reader because without
+# them a build-mode DocsPage cannot start at all — the upstream zensical image
+# has no envsubst, which the operator's build step requires.
 # ---------------------------------------------------------------------------
+
+ARCHIVE_DIR="$(mktemp -d)"
+trap 'rm -rf "${ARCHIVE_DIR}"' EXIT
+
+# load_image NAME IMAGE_TAG
+#
+# Goes through a docker-format archive rather than `kind load docker-image`:
+# it is the path that behaves the same under both engines, and it does not
+# depend on kind being able to reach the image store directly.
+load_image() {
+  local name="$1" image="$2"
+  echo "==> Loading ${image} into kind"
+  "${ENGINE}" save --format docker-archive -o "${ARCHIVE_DIR}/${name}.tar" "${image}"
+  kind load image-archive "${ARCHIVE_DIR}/${name}.tar" --name "${CLUSTER_NAME}"
+  rm -f "${ARCHIVE_DIR}/${name}.tar"
+}
 
 if [[ "${SKIP_BUILD}" == "false" ]]; then
   echo "==> Building ${OPERATOR_IMAGE}"
   "${ENGINE}" build -t "${OPERATOR_IMAGE}" "${REPO_ROOT}"
+
+  echo "==> Building ${ZENSICAL_IMAGE}"
+  "${ENGINE}" build -t "${ZENSICAL_IMAGE}" "${REPO_ROOT}/images/zensical-builder"
+
+  echo "==> Building ${HTTPD_IMAGE}"
+  "${ENGINE}" build -t "${HTTPD_IMAGE}" "${REPO_ROOT}/images/httpd"
 fi
 
-echo "==> Loading ${OPERATOR_IMAGE} into kind"
-# Going through a docker-format archive rather than `kind load docker-image`:
-# it is the path that behaves the same under both engines, and it does not
-# depend on kind being able to reach the image store directly.
-ARCHIVE_DIR="$(mktemp -d)"
-trap 'rm -rf "${ARCHIVE_DIR}"' EXIT
-"${ENGINE}" save --format docker-archive -o "${ARCHIVE_DIR}/operator.tar" "${OPERATOR_IMAGE}"
-kind load image-archive "${ARCHIVE_DIR}/operator.tar" --name "${CLUSTER_NAME}"
+load_image operator "${OPERATOR_IMAGE}"
+load_image zensical "${ZENSICAL_IMAGE}"
+load_image httpd "${HTTPD_IMAGE}"
+
 rm -rf "${ARCHIVE_DIR}"
 trap - EXIT
 
@@ -162,7 +194,11 @@ kubectl wait --for=condition=Established crd/docspages.docspage.io --timeout=2m
 echo
 kubectl get deployment,pods -n "${OPERATOR_NAMESPACE}"
 echo
-echo "Operator is running. Point a DocsPage at a GitHub repository with:"
+echo "Operator is running, and these images are loaded in the cluster:"
+echo "  ${ZENSICAL_IMAGE}   (spec.images.zensical)"
+echo "  ${HTTPD_IMAGE}      (spec.serving.image, port 8080, root /var/www/html)"
+echo
+echo "Point a DocsPage at a GitHub repository with:"
 echo
 echo "  cp dev/manifests/docspage-sample.yaml /tmp/docspage.yaml"
 echo "  \$EDITOR /tmp/docspage.yaml     # set spec.repo.url"

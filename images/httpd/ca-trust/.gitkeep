@@ -1,0 +1,3 @@
+Drop root CA certificates (*.pem) into this directory to have them added to the
+image's trust store. It is kept in git so the COPY in ../Containerfile has a
+source even when no certificates are present.

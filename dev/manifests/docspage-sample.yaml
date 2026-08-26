@@ -1,6 +1,11 @@
 # Template DocsPage for the kind cluster. Copy it, set spec.repo.url to your
 # own repository, and apply it — kind-dev-deploy.sh deliberately does not
 # apply this for you.
+#
+# The two images below are built and loaded into the cluster by
+# kind-dev-deploy.sh, so they are already there when this is applied. Both use
+# the :local tag, which keeps the default pull policy at IfNotPresent — tag them
+# :latest and the kubelet would try to pull them from a registry instead.
 apiVersion: docspage.io/v1alpha1
 kind: DocsPage
 metadata:
@@ -31,10 +36,19 @@ spec:
     DOMAIN: docs.localtest.me
     BASE_URL: https://docs.localtest.me
 
+  images:
+    # Required in practice, not just an override. The operator's build step runs
+    # envsubst, which the upstream zensical/zensical image does not contain —
+    # leaving this unset makes the zensical-build init container exit 127.
+    # Built from images/zensical-builder.
+    zensical: localhost/docspage-zensical:local
+
   serving:
     # Required. Must already listen on serving.port and serve documentRoot —
-    # the operator does not configure the web server.
-    image: CHANGE-ME/docs-server:8080
+    # the operator does not configure the web server. Built from images/httpd,
+    # which is ubi10/httpd-24: it listens on 8080 as uid 1001 and its
+    # DocumentRoot is /var/www/html.
+    image: localhost/docspage-httpd:local
     port: 8080
-    documentRoot: /usr/local/apache2/htdocs
+    documentRoot: /var/www/html
     replicas: 1
