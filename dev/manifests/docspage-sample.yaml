@@ -1,0 +1,39 @@
+# Template DocsPage for the kind cluster. Copy it, set spec.repo.url to your
+# own repository, and apply it — kind-dev-deploy.sh deliberately does not
+# apply this for you.
+apiVersion: docspage.io/v1alpha1
+kind: DocsPage
+metadata:
+  name: docs-sample
+  namespace: docs
+spec:
+  mode: build
+
+  repo:
+    url: https://github.com/krishau99/CHANGE-ME
+    branch: main
+    # Public repository: omit credentialsSecret entirely.
+    #
+    # Private repository: create a secret holding a fine-grained PAT with
+    # Contents:read, then reference it here. GitHub accepts the token as the
+    # password with any non-empty username.
+    #
+    #   kubectl create secret generic github-credentials -n docs \
+    #     --from-literal=username=krishau99 \
+    #     --from-literal=password=github_pat_...
+    #
+    # credentialsSecret: github-credentials
+
+  # Short on purpose, so reconcile behaviour is easy to watch.
+  pollInterval: 1m
+
+  variables:
+    DOMAIN: docs.localtest.me
+    BASE_URL: https://docs.localtest.me
+
+  serving:
+    replicas: 1
+    # httpd:2.4-alpine has "Listen 80" in its default config and the operator
+    # does not override it, so the Service has to target 80 for anything to
+    # answer. Setting this to 8080 reproduces that.
+    port: 80

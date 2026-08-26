@@ -1,0 +1,13 @@
+# Minimal single-node kind cluster for DocsPage operator development.
+#
+# Deliberately bare: no port mappings, no ingress hooks. Pods get outbound
+# network through the node, which is all that is needed to clone from GitHub.
+#
+# When ingress is needed later, it has to be added here and the cluster
+# recreated — extraPortMappings cannot be applied to an existing cluster.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    # Pin the node image to keep the Kubernetes version reproducible.
+    # image: kindest/node:v1.34.0
