@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -27,6 +28,27 @@ const (
 	defaultServingPort = 8080
 )
 
+// Reasons carried on the Ready condition. Each one says which observation
+// produced it, so "why is this not ready" is answerable from the condition
+// alone without going to the Deployment or the pods.
+const (
+	// reasonDeploymentAvailable means the Deployment reports its replicas as
+	// available. This is the only reason that accompanies Ready=True.
+	reasonDeploymentAvailable = "DeploymentAvailable"
+	// reasonDeploymentProgressing means the Deployment exists but the cluster
+	// has not caught up with its current spec yet.
+	reasonDeploymentProgressing = "DeploymentProgressing"
+	// reasonDeploymentUnavailable means the Deployment has been observed and
+	// does not have the replicas it wants.
+	reasonDeploymentUnavailable = "DeploymentUnavailable"
+	// reasonReconcileError means the reconciler itself failed before it could
+	// observe anything.
+	reasonReconcileError = "ReconcileError"
+	// reasonUnknown is a fallback so the condition never carries an empty
+	// reason, which the API server rejects.
+	reasonUnknown = "Unknown"
+)
+
 // DocsPageReconciler reconciles a DocsPage object.
 type DocsPageReconciler struct {
 	client.Client
@@ -34,6 +56,17 @@ type DocsPageReconciler struct {
 	// DefaultCACert is an optional cluster-wide CA certificate (PEM) used for
 	// external HTTP calls (Gitea, registries) when no per-resource CA secret is configured.
 	DefaultCACert []byte
+}
+
+// observedStatus is what a reconcile pass learned about the world. It is
+// deliberately not written by the code that creates the Deployment and Service:
+// a successful write says the objects were accepted, not that documentation is
+// being served, and conflating the two is what made status.ready meaningless.
+type observedStatus struct {
+	currentSHA string
+	ready      bool
+	reason     string
+	message    string
 }
 
 // +kubebuilder:rbac:groups=docspage,resources=docspages,verbs=get;list;watch;create;update;patch;delete
@@ -72,46 +105,66 @@ func (r *DocsPageReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// Reconcile based on mode
+	var obs observedStatus
 	var err error
 	switch dp.Spec.Mode {
 	case v1alpha1.DocsPageModeBuild:
-		err = r.reconcileBuildMode(ctx, dp)
+		obs, err = r.reconcileBuildMode(ctx, dp)
 	case v1alpha1.DocsPageModePrebuilt:
-		err = r.reconcilePrebuiltMode(ctx, dp)
+		obs, err = r.reconcilePrebuiltMode(ctx, dp)
 	default:
 		err = fmt.Errorf("unknown mode %q", dp.Spec.Mode)
 	}
 
 	if err != nil {
 		logger.Error(err, "reconciliation failed")
-		if statusErr := r.setCondition(ctx, dp, conditionTypeReady, metav1.ConditionFalse, "ReconcileError", err.Error()); statusErr != nil {
-			logger.Error(statusErr, "failed to update status condition")
+		obs = observedStatus{
+			currentSHA: dp.Status.CurrentSHA,
+			ready:      false,
+			reason:     reasonReconcileError,
+			message:    err.Error(),
 		}
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, err
 	}
 
-	// For build mode, schedule the next poll
+	// One status write per pass, whatever happened above.
+	if statusErr := r.applyStatus(ctx, dp, obs); statusErr != nil {
+		if err == nil {
+			return ctrl.Result{}, fmt.Errorf("updating status: %w", statusErr)
+		}
+		// The reconcile error is the more useful one to surface and requeue on.
+		logger.Error(statusErr, "failed to record reconcile error in status")
+	}
+
+	// A non-nil error requeues with exponential backoff and makes
+	// controller-runtime discard the Result, so never return both.
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// For build mode, schedule the next poll. Note this is also the path taken
+	// when the Deployment is unhealthy: an unready Deployment is an observation,
+	// not a reconcile failure, so it must not be pushed into error backoff where
+	// status would stop being refreshed.
 	if dp.Spec.Mode == v1alpha1.DocsPageModeBuild {
-		interval := parsePollInterval(dp.Spec.PollInterval)
-		return ctrl.Result{RequeueAfter: interval}, nil
+		return ctrl.Result{RequeueAfter: parsePollInterval(dp.Spec.PollInterval)}, nil
 	}
 
 	return ctrl.Result{}, nil
 }
 
 // reconcileBuildMode handles reconciliation for mode=build.
-func (r *DocsPageReconciler) reconcileBuildMode(ctx context.Context, dp *v1alpha1.DocsPage) error {
+func (r *DocsPageReconciler) reconcileBuildMode(ctx context.Context, dp *v1alpha1.DocsPage) (observedStatus, error) {
 	logger := log.FromContext(ctx)
 
 	if dp.Spec.Repo == nil || dp.Spec.Repo.URL == "" {
-		return fmt.Errorf("mode is 'build' but spec.repo.url is not set")
+		return observedStatus{}, fmt.Errorf("mode is 'build' but spec.repo.url is not set")
 	}
 
 	// The operator does not configure the web server, so an unset serving image
 	// has no safe default: anything it picked would listen wherever that image
 	// happens to listen, not on spec.serving.port. Fail loudly instead.
 	if dp.Spec.Serving.Image == "" {
-		return fmt.Errorf(
+		return observedStatus{}, fmt.Errorf(
 			"mode is 'build' but spec.serving.image is not set; "+
 				"supply an image that listens on port %d and serves %s",
 			servingPort(dp), documentRoot(dp))
@@ -132,31 +185,27 @@ func (r *DocsPageReconciler) reconcileBuildMode(ctx context.Context, dp *v1alpha
 
 	// Reconcile Deployment
 	if err := r.reconcileDeployment(ctx, dp, registryURL, latestSHA); err != nil {
-		return fmt.Errorf("reconciling Deployment: %w", err)
+		return observedStatus{}, fmt.Errorf("reconciling Deployment: %w", err)
 	}
 
 	// Reconcile Service
 	if err := r.reconcileService(ctx, dp); err != nil {
-		return fmt.Errorf("reconciling Service: %w", err)
+		return observedStatus{}, fmt.Errorf("reconciling Service: %w", err)
 	}
 
-	// Update status
-	now := metav1.Now()
-	dp.Status.CurrentSHA = latestSHA
-	dp.Status.LastSyncTime = &now
-	dp.Status.Ready = true
-
-	if err := r.setCondition(ctx, dp, conditionTypeReady, metav1.ConditionTrue, "DeploymentReady", "Documentation is being served"); err != nil {
-		return fmt.Errorf("updating status: %w", err)
+	obs, err := r.observeDeployment(ctx, dp)
+	if err != nil {
+		return observedStatus{}, fmt.Errorf("observing Deployment: %w", err)
 	}
+	obs.currentSHA = latestSHA
 
-	return nil
+	return obs, nil
 }
 
 // reconcilePrebuiltMode handles reconciliation for mode=prebuilt.
-func (r *DocsPageReconciler) reconcilePrebuiltMode(ctx context.Context, dp *v1alpha1.DocsPage) error {
+func (r *DocsPageReconciler) reconcilePrebuiltMode(ctx context.Context, dp *v1alpha1.DocsPage) (observedStatus, error) {
 	if dp.Spec.Image == "" {
-		return fmt.Errorf(
+		return observedStatus{}, fmt.Errorf(
 			"mode is 'prebuilt' but spec.image is not set; "+
 				"supply an image that listens on port %d", servingPort(dp))
 	}
@@ -168,24 +217,164 @@ func (r *DocsPageReconciler) reconcilePrebuiltMode(ctx context.Context, dp *v1al
 
 	// Reconcile Deployment
 	if err := r.reconcileDeployment(ctx, dp, registryURL, ""); err != nil {
-		return fmt.Errorf("reconciling Deployment: %w", err)
+		return observedStatus{}, fmt.Errorf("reconciling Deployment: %w", err)
 	}
 
 	// Reconcile Service
 	if err := r.reconcileService(ctx, dp); err != nil {
-		return fmt.Errorf("reconciling Service: %w", err)
+		return observedStatus{}, fmt.Errorf("reconciling Service: %w", err)
 	}
 
-	// Update status
-	now := metav1.Now()
-	dp.Status.LastSyncTime = &now
-	dp.Status.Ready = true
+	// There is no repository to poll in prebuilt mode, so currentSHA and
+	// lastSyncTime stay unset rather than carrying a meaningless timestamp.
+	return r.observeDeployment(ctx, dp)
+}
 
-	if err := r.setCondition(ctx, dp, conditionTypeReady, metav1.ConditionTrue, "DeploymentReady", "Documentation is being served"); err != nil {
-		return fmt.Errorf("updating status: %w", err)
+// observeDeployment reads the Deployment back and derives readiness from what
+// the cluster reports about it. Nothing here infers readiness from the fact
+// that a write succeeded.
+func (r *DocsPageReconciler) observeDeployment(ctx context.Context, dp *v1alpha1.DocsPage) (observedStatus, error) {
+	deploy := &appsv1.Deployment{}
+	err := r.Get(ctx, types.NamespacedName{Name: dp.Name, Namespace: dp.Namespace}, deploy)
+	if errors.IsNotFound(err) {
+		// Reconcile only just created it, or the cache has not caught up.
+		return observedStatus{
+			ready:   false,
+			reason:  reasonDeploymentProgressing,
+			message: "Deployment has not been observed yet",
+		}, nil
+	}
+	if err != nil {
+		return observedStatus{}, err
 	}
 
-	return nil
+	wanted := int32(1)
+	if deploy.Spec.Replicas != nil {
+		wanted = *deploy.Spec.Replicas
+	}
+	available := deploy.Status.AvailableReplicas
+
+	switch {
+	case deploy.Status.ObservedGeneration < deploy.Generation:
+		return observedStatus{
+			ready:   false,
+			reason:  reasonDeploymentProgressing,
+			message: "Deployment was updated and the change has not been rolled out yet",
+		}, nil
+
+	case wanted == 0:
+		return observedStatus{
+			ready:   false,
+			reason:  reasonDeploymentUnavailable,
+			message: "spec.serving.replicas is 0, so nothing is serving documentation",
+		}, nil
+
+	case available < wanted:
+		message := fmt.Sprintf("%d of %d replicas available", available, wanted)
+		if detail := deploymentProblem(deploy); detail != "" {
+			message = fmt.Sprintf("%s: %s", message, detail)
+		}
+		return observedStatus{
+			ready:   false,
+			reason:  reasonDeploymentUnavailable,
+			message: message,
+		}, nil
+
+	default:
+		return observedStatus{
+			ready:   true,
+			reason:  reasonDeploymentAvailable,
+			message: fmt.Sprintf("%d of %d replicas available and serving documentation", available, wanted),
+		}, nil
+	}
+}
+
+// deploymentProblem returns the Deployment's own explanation for not being
+// available, if it has one, so the DocsPage condition does not just report a
+// replica count the user then has to go and interpret.
+func deploymentProblem(deploy *appsv1.Deployment) string {
+	for _, c := range deploy.Status.Conditions {
+		if c.Type == appsv1.DeploymentProgressing && c.Status == corev1.ConditionFalse && c.Message != "" {
+			return c.Message
+		}
+	}
+	for _, c := range deploy.Status.Conditions {
+		if c.Type == appsv1.DeploymentAvailable && c.Status == corev1.ConditionFalse && c.Message != "" {
+			return c.Message
+		}
+	}
+	return ""
+}
+
+// applyStatus writes the observed status in a single merge patch.
+//
+// Two things matter here. A merge patch carries no resourceVersion
+// precondition, so it cannot fail with "the object has been modified" the way
+// the previous read-modify-Update pair did — that conflict used to abort the
+// whole reconcile and leave the last written status frozen in place. And when
+// nothing has changed the patch is skipped entirely, so a steady state produces
+// no writes, and therefore no watch events that would reconcile the resource
+// again purely because it had just been written.
+func (r *DocsPageReconciler) applyStatus(ctx context.Context, dp *v1alpha1.DocsPage, obs observedStatus) error {
+	base := dp.DeepCopy()
+
+	// lastSyncTime marks when the observed commit last changed, not when the
+	// operator last ran. Refreshing it every pass would make every reconcile a
+	// write, which is the churn this function exists to avoid.
+	if obs.currentSHA != "" && obs.currentSHA != dp.Status.CurrentSHA {
+		now := metav1.Now()
+		dp.Status.CurrentSHA = obs.currentSHA
+		dp.Status.LastSyncTime = &now
+	}
+	dp.Status.Ready = obs.ready
+
+	conditionStatus := metav1.ConditionFalse
+	if obs.ready {
+		conditionStatus = metav1.ConditionTrue
+	}
+	reason := obs.reason
+	if reason == "" {
+		reason = reasonUnknown
+	}
+	setCondition(dp, conditionTypeReady, conditionStatus, reason, obs.message)
+
+	if reflect.DeepEqual(base.Status, dp.Status) {
+		return nil
+	}
+
+	return r.Status().Patch(ctx, dp, client.MergeFrom(base))
+}
+
+// setCondition updates a condition on the DocsPage status in memory. It does
+// not write: the caller decides when and how the status is persisted.
+func setCondition(dp *v1alpha1.DocsPage, condType string, status metav1.ConditionStatus, reason, message string) {
+	condition := metav1.Condition{
+		Type:               condType,
+		Status:             status,
+		ObservedGeneration: dp.Generation,
+		LastTransitionTime: metav1.Now(),
+		Reason:             reason,
+		Message:            message,
+	}
+
+	for i, c := range dp.Status.Conditions {
+		if c.Type != condType {
+			continue
+		}
+		// LastTransitionTime means what it says: only move it when the status
+		// actually flips. Refreshing it every pass would defeat the no-op check
+		// in applyStatus.
+		if c.Status != status {
+			dp.Status.Conditions[i] = condition
+		} else {
+			dp.Status.Conditions[i].Message = message
+			dp.Status.Conditions[i].Reason = reason
+			dp.Status.Conditions[i].ObservedGeneration = dp.Generation
+		}
+		return
+	}
+
+	dp.Status.Conditions = append(dp.Status.Conditions, condition)
 }
 
 // reconcileDeployment creates or updates the Deployment for a DocsPage.
@@ -308,41 +497,6 @@ func (r *DocsPageReconciler) fetchLatestSHA(ctx context.Context, dp *v1alpha1.Do
 	}
 
 	return poller.GetLatestSHA(ctx, dp.Spec.Repo.URL, branch, creds)
-}
-
-// setCondition updates a specific condition on the DocsPage status.
-func (r *DocsPageReconciler) setCondition(ctx context.Context, dp *v1alpha1.DocsPage, condType string, status metav1.ConditionStatus, reason, message string) error {
-	now := metav1.Now()
-	condition := metav1.Condition{
-		Type:               condType,
-		Status:             status,
-		ObservedGeneration: dp.Generation,
-		LastTransitionTime: now,
-		Reason:             reason,
-		Message:            message,
-	}
-
-	// Find existing condition and update, or append
-	found := false
-	for i, c := range dp.Status.Conditions {
-		if c.Type == condType {
-			// Only update LastTransitionTime if status changed
-			if c.Status != status {
-				dp.Status.Conditions[i] = condition
-			} else {
-				dp.Status.Conditions[i].Message = message
-				dp.Status.Conditions[i].Reason = reason
-				dp.Status.Conditions[i].ObservedGeneration = dp.Generation
-			}
-			found = true
-			break
-		}
-	}
-	if !found {
-		dp.Status.Conditions = append(dp.Status.Conditions, condition)
-	}
-
-	return r.Status().Update(ctx, dp)
 }
 
 // servingPort returns the configured serving port, or the CRD default when the

@@ -156,9 +156,30 @@ status:
     - type: Ready
       status: "True"
       lastTransitionTime: "2026-04-14T10:00:00Z"
-      reason: DeploymentReady
-      message: "Documentation is being served"
+      reason: DeploymentAvailable
+      message: "1 of 1 replicas available and serving documentation"
 ```
+
+`ready` and the `Ready` condition are derived from the Deployment's own status
+after reconciling, not from the fact that the Deployment and Service were
+written successfully. A DocsPage whose pods cannot start reports `ready: false`
+with a reason that says which stage it got stuck at:
+
+| Reason | Meaning |
+|---|---|
+| `DeploymentAvailable` | The Deployment has the replicas it wants. The only reason paired with `Ready=True`. |
+| `DeploymentProgressing` | The Deployment exists but the cluster has not rolled out its current spec yet. |
+| `DeploymentUnavailable` | The Deployment has been observed and is short of replicas. The message carries the count and the Deployment's own explanation. |
+| `ReconcileError` | The operator failed before it could observe anything — a bad spec, or an API error. |
+
+`kubectl get docspages` surfaces the reason in a `Status` column, so a stuck
+DocsPage is visible without describing it.
+
+`lastSyncTime` marks when `currentSHA` last changed, not when the operator last
+ran. The operator writes status only when something actually differs, so a
+steady state produces no writes at all — which is what keeps a status write from
+triggering the reconcile that would write it again. In `prebuilt` mode there is
+no repository to poll, so neither field is set.
 
 ---
 

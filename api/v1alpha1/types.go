@@ -170,11 +170,16 @@ type DocsPageStatus struct {
 	// +optional
 	CurrentSHA string `json:"currentSHA,omitempty"`
 
-	// LastSyncTime is the time of the last successful synchronization.
+	// LastSyncTime is when CurrentSHA last changed, not when the operator last
+	// ran. A steady state produces no status writes, so this does not advance
+	// while the deployed commit stays the same. Only set when mode is "build".
 	// +optional
 	LastSyncTime *metav1.Time `json:"lastSyncTime,omitempty"`
 
-	// Ready indicates whether the documentation is ready to serve traffic.
+	// Ready reports whether the Deployment has the replicas it wants, as
+	// observed after reconciling. It is not set from the fact that the
+	// Deployment and Service were written successfully. See the Ready condition
+	// for why, when this is false.
 	// +optional
 	Ready bool `json:"ready,omitempty"`
 
@@ -190,6 +195,7 @@ type DocsPageStatus struct {
 // +kubebuilder:resource:scope=Namespaced,categories=docs,shortName=dp
 // +kubebuilder:printcolumn:name="Mode",type=string,JSONPath=`.spec.mode`
 // +kubebuilder:printcolumn:name="Ready",type=boolean,JSONPath=`.status.ready`
+// +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="SHA",type=string,JSONPath=`.status.currentSHA`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 

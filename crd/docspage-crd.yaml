@@ -29,6 +29,9 @@ spec:
         - name: Ready
           type: boolean
           jsonPath: .status.ready
+        - name: Status
+          type: string
+          jsonPath: .status.conditions[?(@.type=="Ready")].reason
         - name: SHA
           type: string
           jsonPath: .status.currentSHA
@@ -205,10 +208,16 @@ spec:
                 lastSyncTime:
                   type: string
                   format: date-time
-                  description: LastSyncTime is the time of the last successful synchronization.
+                  description: |
+                    LastSyncTime is when currentSHA last changed, not when the operator last ran.
+                    A steady state produces no status writes, so this does not advance while the
+                    deployed commit stays the same. Only set when mode is "build".
                 ready:
                   type: boolean
-                  description: Ready indicates whether the documentation is ready to serve traffic.
+                  description: |
+                    Ready reports whether the Deployment has the replicas it wants, as observed
+                    after reconciling. It is not set from the fact that the Deployment and Service
+                    were written successfully. See the Ready condition for why, when this is false.
                 conditions:
                   type: array
                   description: Conditions represent the latest available observations of the DocsPage state.
